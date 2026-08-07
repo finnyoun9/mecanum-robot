@@ -31,6 +31,11 @@ __pycache__/
 *.pyc
 .venv/
 
+# Perception outputs (large generated files)
+perception/**/*.ply
+perception/**/*.pcd
+perception/**/scan_output.*
+
 # OS
 .DS_Store
 Thumbs.db
