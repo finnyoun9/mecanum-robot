@@ -1,5 +1,7 @@
 # Mecanum Mobile Robot (MCR)
 
+[中文文档](README_zh.md) | English
+
 **Multi-Tier RTOS + ROS2 Autonomous Mobile Robot with Mecanum Wheels**
 
 A full-stack embedded robotics project targeting MCU+RTOS job roles.
