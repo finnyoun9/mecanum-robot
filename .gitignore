@@ -1,0 +1,36 @@
+# Build artifacts
+build/
+bin/
+obj/
+*.o
+*.a
+*.elf
+*.hex
+*.bin
+
+# ROS2
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# STM32
+firmware/Drivers/
+firmware/Middleware/
+*.ioc
+*.mxproject
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db

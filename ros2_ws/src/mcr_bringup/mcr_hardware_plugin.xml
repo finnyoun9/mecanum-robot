@@ -1,0 +1,11 @@
+<library path="mcr_hardware_interface">
+  <class name="mcr_bringup/MCRHardwareInterface"
+         type="mcr_bringup::MCRHardwareInterface"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Mecanum Robot hardware interface.
+      Communicates with STM32 FreeRTOS firmware over UART.
+      Exposes 4 velocity-controlled wheel joints + IMU + ToF sensors.
+    </description>
+  </class>
+</library>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>mcr_navigation</name>
+  <version>0.1.0</version>
+  <description>Nav2 + SLAM configuration for Mecanum Robot</description>
+  <maintainer email="user@example.com">Developer</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>nav2_bringup</depend>
+  <depend>slam_toolbox</depend>
+  <depend>rviz2</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
