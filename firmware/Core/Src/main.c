@@ -21,6 +21,9 @@
 /* App */
 #include "robot_control.h"
 #include "protocol.h"
+#include "ahrs.h"
+#include "mpu9250.h"
+#include "tof_sensor.h"
 
 /* HAL (uncomment in real project) */
 /* #include "main.h" */
@@ -213,15 +216,33 @@ static void SensorTask(void *pvParameters) {
     (void)pvParameters;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
+    const float xImuDt = 0.010f; /* matches this task's 10ms period */
+
+    static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f}; /* AHRS state, persists across loop */
+    uint8_t tof_divider = 0;
+
+    mpu9250_init();
+    tof_init();
 
     for (;;) {
-        /* --- ToF read (20 Hz = every 50ms) --- */
-        /* tof_distance_mm = vl53l0x_read_mm(); -- hardware-specific */
+        /* --- IMU read + AHRS update (100 Hz = every 10ms) --- */
+        int16_t accel_raw[3], gyro_raw[3];
+        float   accel_mps2[3], gyro_rads[3];
 
-        /* --- IMU read (100 Hz = every 10ms) --- */
-        /* mpu9250_read_quat(imu_q); */
-        /* mpu9250_read_gyro(imu_gyro); */
-        /* MahonyAHRSupdate(imu_gyro, imu_accel, imu_mag, imu_q); */
+        mpu9250_read_raw(accel_raw, gyro_raw);
+        mpu9250_convert_units(accel_raw, gyro_raw, accel_mps2, gyro_rads);
+        MahonyAHRSupdateIMU(gyro_rads[0], gyro_rads[1], gyro_rads[2],
+                             accel_mps2[0], accel_mps2[1], accel_mps2[2],
+                             imu_q, xImuDt);
+        robot_update_imu(imu_q, gyro_rads);
+
+        /* --- ToF read (20 Hz = every 5th iteration / 50ms) --- */
+        if (++tof_divider >= 5) {
+            tof_divider = 0;
+            tof_status_t tof_status;
+            uint16_t tof_mm = tof_read_mm(&tof_status);
+            robot_update_tof(tof_mm, tof_status == TOF_TIMEOUT);
+        }
 
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(10));
     }

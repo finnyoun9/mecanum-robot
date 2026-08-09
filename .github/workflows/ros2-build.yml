@@ -1,0 +1,35 @@
+name: ROS2 Build & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    # Jazzy targets Ubuntu 24.04 (Noble).
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # NOTE: action versions below are recent tags as of writing (2026-08).
+      # If CI fails to resolve them, check ros-tooling/setup-ros and
+      # ros-tooling/action-ros-ci for the latest release tags and bump.
+      - name: Setup ROS 2 Jazzy
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: jazzy
+
+      # action-ros-ci runs colcon build then colcon test by default, which
+      # picks up the gtest suite (test_mecanum_kinematics) registered in
+      # mcr_bringup/CMakeLists.txt.
+      - name: Build and test mcr_bringup, mcr_description, mcr_navigation
+        uses: ros-tooling/action-ros-ci@v0.3
+        with:
+          target-ros2-distro: jazzy
+          package-name: |
+            mcr_bringup
+            mcr_description
+            mcr_navigation

@@ -98,6 +98,21 @@ def generate_launch_description():
         output='screen',
     )
 
+    # robot_localization EKF — fuses wheel odom + IMU into a corrected
+    # odom -> base_footprint TF and /odometry/filtered topic. Started only
+    # after both the mecanum drive controller and IMU broadcaster are up,
+    # since it depends on their published topics.
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[
+            os.path.join(pkg_bringup, 'config', 'ekf.yaml'),
+            {'use_sim_time': use_sim_time},
+        ],
+    )
+
     # --- Laser driver (LD19/LD06) — uncomment when wired ---
     # laser_node = Node(
     #     package='ldlidar_stl_ros2',
@@ -131,7 +146,23 @@ def generate_launch_description():
         RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=joint_state_spawner,
-                on_exit=[mecanum_controller_spawner, imu_spawner],
+                on_exit=[mecanum_controller_spawner],
+            )
+        ),
+
+        # Spawn IMU broadcaster after mecanum controller
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=mecanum_controller_spawner,
+                on_exit=[imu_spawner],
+            )
+        ),
+
+        # Start the EKF once wheel odom + IMU are both being published
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=imu_spawner,
+                on_exit=[ekf_node],
             )
         ),
     ])

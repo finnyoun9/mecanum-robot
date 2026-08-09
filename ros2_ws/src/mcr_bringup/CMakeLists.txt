@@ -86,4 +86,11 @@ install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_mecanum_kinematics test/test_mecanum_kinematics.cpp)
+  target_link_libraries(test_mecanum_kinematics mecanum_kinematics)
+endif()
+
 ament_package()

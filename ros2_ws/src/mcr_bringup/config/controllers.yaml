@@ -1,9 +1,16 @@
 # Controller configuration for mecanum robot.
 #
-# Uses mecanum_drive_controller which:
+# Uses the official ros-controls/ros2_controllers `mecanum_drive_controller`
+# (verified against the Jazzy docs: https://control.ros.org/jazzy/doc/ros2_controllers/mecanum_drive_controller/doc/userdoc.html
+# and the package's generate_parameter_library schema — param names below are
+# the REAL ones, not guessed).
+#
 #   1. Subscribes to /cmd_vel
 #   2. Computes mecanum inverse kinematics
 #   3. Sends 4 individual wheel velocity commands to the hardware interface
+#   4. Publishes odometry on /mecanum_drive_controller/odom (consumed by the
+#      robot_localization EKF in ekf.yaml, NOT used directly for the
+#      odom->base_footprint TF — see enable_odom_tf below)
 
 controller_manager:
   ros__parameters:
@@ -21,31 +28,51 @@ controller_manager:
 # --- Mecanum Drive Controller ---
 mecanum_drive_controller:
   ros__parameters:
-    # Wheel names — must match URDF joint names
-    front_left_wheel:  "wheel_front_left_joint"
-    front_right_wheel: "wheel_front_right_joint"
-    rear_left_wheel:   "wheel_rear_left_joint"
-    rear_right_wheel:  "wheel_rear_right_joint"
+    reference_timeout: 0.5  # seconds — cmd_vel considered stale after this
 
-    # Kinematics (must match URDF and mecanum_params in hardware interface)
-    wheel_radius: 0.0325   # metres (65mm diameter / 2)
-    wheel_base:   0.20     # lx * 2 (front-rear distance)
-    track_width:  0.24     # ly * 2 (left-right distance)
+    # Command/state joint names — must match URDF joint names AND the
+    # joints exported by MCRHardwareInterface (mcr_hardware_interface.cpp)
+    front_left_wheel_command_joint_name:  "wheel_front_left_joint"
+    front_right_wheel_command_joint_name: "wheel_front_right_joint"
+    rear_left_wheel_command_joint_name:   "wheel_rear_left_joint"
+    rear_right_wheel_command_joint_name:  "wheel_rear_right_joint"
 
-    # Limits
-    linear.x.max_velocity:  0.5   # m/s
-    linear.y.max_velocity:  0.3   # m/s (lateral)
-    angular.z.max_velocity: 1.5   # rad/s
+    front_left_wheel_state_joint_name:  "wheel_front_left_joint"
+    front_right_wheel_state_joint_name: "wheel_front_right_joint"
+    rear_left_wheel_state_joint_name:   "wheel_rear_left_joint"
+    rear_right_wheel_state_joint_name:  "wheel_rear_right_joint"
 
-    # Base frame
+    # Kinematics — must match mcr.urdf.xacro (wheel_radius, lx, ly) and
+    # mecanum_kinematics.hpp (MecanumParams)
+    kinematics:
+      base_frame_offset: { x: 0.0, y: 0.0, theta: 0.0 }
+      wheels_radius: 0.0325                            # m (65mm diameter / 2)
+      sum_of_robot_center_projection_on_X_Y_axis: 0.22  # lx + ly = 0.10 + 0.12
+
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
 
-    # Publish rate
-    publish_rate: 50.0
+    # The robot_localization EKF (ekf.yaml) is the sole publisher of the
+    # odom->base_footprint TF, fusing this controller's wheel odometry with
+    # IMU yaw. Publishing it here too would create two competing TF
+    # broadcasters on the same edge.
+    enable_odom_tf: false
 
-    # Velocity rolling window for acceleration limiting
-    velocity_rolling_window_size: 10
+    twist_covariance_diagonal: [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
+    pose_covariance_diagonal:  [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
+
+    # Velocity limits
+    linear:
+      x:
+        max_velocity: 0.5    # m/s forward
+        min_velocity: -0.3   # m/s reverse
+      y:
+        max_velocity: 0.3    # m/s lateral (mecanum feature)
+        min_velocity: -0.3
+    angular:
+      z:
+        max_velocity: 1.5    # rad/s
+        min_velocity: -1.5
 
 # --- Joint State Broadcaster ---
 joint_state_broadcaster:
@@ -57,11 +84,9 @@ joint_state_broadcaster:
       - wheel_rear_right_joint
     extra_joints:
       - imu_joint
-    publish_rate: 50.0
 
 # --- IMU Sensor Broadcaster ---
 imu_sensor_broadcaster:
   ros__parameters:
     sensor_name: "imu_sensor"
     frame_id: "imu_link"
-    publish_rate: 100.0

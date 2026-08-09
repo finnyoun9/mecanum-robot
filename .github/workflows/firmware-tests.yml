@@ -1,0 +1,29 @@
+name: Firmware Tests
+
+on:
+  push:
+    branches: [ main, develop, '**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Run protocol tests
+      run: |
+        gcc -std=c11 -I shared shared/tests/test_protocol.c shared/protocol.c -o /tmp/test_protocol
+        /tmp/test_protocol
+
+    - name: Run PID controller tests
+      run: |
+        gcc -std=c11 -I firmware/Core/Inc firmware/Core/Test/test_pid.c firmware/Core/Src/pid.c -lm -o /tmp/test_pid
+        /tmp/test_pid
+
+    - name: Run AHRS filter tests
+      run: |
+        gcc -std=c99 -Wall -Wextra -I firmware/Core/Inc firmware/Core/Test/test_ahrs.c firmware/Core/Src/ahrs.c -lm -o /tmp/test_ahrs
+        /tmp/test_ahrs

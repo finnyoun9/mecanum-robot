@@ -1,0 +1,71 @@
+# ekf.yaml — robot_localization EKF config for the mecanum robot.
+#
+# Fuses:
+#   odom0 = wheel odometry from mecanum_drive_controller (position/velocity
+#           trusted; yaw NOT trusted — mecanum rollers slip, especially
+#           during lateral (vy) motion, making wheel-differential yaw
+#           unreliable).
+#   imu0  = IMU from imu_sensor_broadcaster (yaw/vyaw trusted — gyro-based
+#           heading is far more reliable than wheel-derived heading on a
+#           mecanum platform prone to roller slip).
+#
+# Output: /odometry/filtered (nav_msgs/Odometry) + odom -> base_footprint TF.
+# slam_toolbox/Nav2 should consume this corrected TF/topic instead of raw
+# wheel odometry.
+#
+# ASSUMPTION: mecanum_drive_controller publishes odometry on the standard
+# ros2_control topic naming convention "<controller_name>/odom", i.e.
+# "/mecanum_drive_controller/odom". No remap is configured for it in
+# controllers.yaml or robot.launch.py, so this is the ROS2 default.
+# Verify with `ros2 topic list` on real hardware.
+#
+# ASSUMPTION: imu_sensor_broadcaster publishes on its standard topic
+# "/imu_sensor_broadcaster/imu" (also unremapped).
+#
+# Frames match controllers.yaml (mecanum_drive_controller: base_frame_id
+# "base_footprint", odom_frame_id "odom") and slam_toolbox_params.yaml
+# (base_frame "base_footprint", odom_frame "odom").
+
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    two_d_mode: true
+    publish_tf: true
+    publish_acceleration: false
+    print_diagnostics: true
+    debug: false
+
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    sensor_timeout: 0.1
+    transform_time_offset: 0.0
+    transform_timeout: 0.0
+
+    # --- Wheel odometry (mecanum_drive_controller) ---
+    odom0: /mecanum_drive_controller/odom
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    odom0_config: [true,  true,  false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, true,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 10
+    odom0_nodelay: false
+
+    # --- IMU (imu_sensor_broadcaster) ---
+    imu0: /imu_sensor_broadcaster/imu
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 10
+    imu0_nodelay: false
+    imu0_remove_gravitational_acceleration: true

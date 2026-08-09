@@ -12,6 +12,11 @@ slam_toolbox:
     ceres_loss_function: "None"
 
     # ROS
+    # slam_toolbox has no odom-topic param — it reads pose via the
+    # odom_frame -> base_frame TF. That TF is now published by the
+    # robot_localization EKF (ekf.yaml) instead of raw wheel odometry,
+    # so no topic name change is needed here; the frame names below
+    # must just keep matching ekf.yaml's odom_frame/base_link_frame.
     odom_frame: "odom"
     map_frame: "map"
     base_frame: "base_footprint"

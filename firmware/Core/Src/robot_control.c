@@ -146,6 +146,20 @@ const robot_state_t* robot_get_state(void) {
     return &g_robot;
 }
 
+void robot_update_imu(const float q[4], const float gyro[3]) {
+    memcpy(g_robot.imu_q, q, sizeof(g_robot.imu_q));
+    memcpy(g_robot.imu_gyro, gyro, sizeof(g_robot.imu_gyro));
+}
+
+void robot_update_tof(uint16_t distance_mm, bool timed_out) {
+    if (timed_out) {
+        g_robot.error_flags |= ERR_TOF_TIMEOUT;
+        return; /* keep last known-good distance */
+    }
+    g_robot.error_flags &= (uint8_t)~ERR_TOF_TIMEOUT;
+    g_robot.tof_distance_mm = distance_mm;
+}
+
 void robot_emergency_stop(void) {
     g_robot.emergency_stop_active = true;
     for (int i = 0; i < MOTOR_COUNT; i++) {

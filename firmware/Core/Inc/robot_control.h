@@ -77,6 +77,21 @@ void robot_send_odometry(void);
 /** Get robot state pointer (read-only access for other tasks) */
 const robot_state_t* robot_get_state(void);
 
+/**
+ * @brief Update IMU orientation quaternion + gyro reading.
+ * Called from SensorTask after each AHRS update — avoids reaching into
+ * robot_control's static state directly.
+ */
+void robot_update_imu(const float q[4], const float gyro[3]);
+
+/**
+ * @brief Update ToF distance reading. Sets/clears ERR_TOF_TIMEOUT in
+ * error_flags. On timeout the last known-good distance is kept rather
+ * than overwritten, so robot_ctrl_loop's emergency-stop check doesn't see
+ * a bogus 0.
+ */
+void robot_update_tof(uint16_t distance_mm, bool timed_out);
+
 /** Trigger emergency stop from ToF/comm timeout */
 void robot_emergency_stop(void);
 
