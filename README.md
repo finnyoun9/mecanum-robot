@@ -62,7 +62,7 @@ mecanum-robot/
 | Motors | JGA25-370 DC gear motor w/ encoder | 4 |
 | Motor Driver | TB6612FNG dual H-bridge | 2 |
 | LiDAR | LD19 / LD06 360° | 1 |
-| IMU | MPU9250 / ICM-20948 | 1 |
+| IMU | MPU6050 | 1 |
 | ToF | VL53L0X / VL53L1X | 1 |
 | Camera | USB camera (or OAK-D Lite) | 1 |
 | Battery | 3S LiPo + buck converter | 1 set |

@@ -59,7 +59,7 @@ mecanum-robot/
 | 电机 | JGA25-370 编码器减速电机 | 4 |
 | 电机驱动 | TB6612FNG 双路 H 桥 | 2 |
 | 激光雷达 | LD19 / LD06 360° | 1 |
-| IMU | MPU9250 / ICM-20948 | 1 |
+| IMU | MPU6050 | 1 |
 | ToF 测距 | VL53L0X / VL53L1X | 1 |
 | 相机 | USB 摄像头 (或 OAK-D Lite) | 1 |
 | 电源 | 3S 锂电池 + 降压模块 | 1 套 |

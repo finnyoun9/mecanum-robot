@@ -22,7 +22,7 @@
 #include "robot_control.h"
 #include "protocol.h"
 #include "ahrs.h"
-#include "mpu9250.h"
+#include "mpu6050.h"
 #include "tof_sensor.h"
 
 /* HAL (uncomment in real project) */
@@ -221,7 +221,7 @@ static void SensorTask(void *pvParameters) {
     static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f}; /* AHRS state, persists across loop */
     uint8_t tof_divider = 0;
 
-    mpu9250_init();
+    mpu6050_init();
     tof_init();
 
     for (;;) {
@@ -229,8 +229,8 @@ static void SensorTask(void *pvParameters) {
         int16_t accel_raw[3], gyro_raw[3];
         float   accel_mps2[3], gyro_rads[3];
 
-        mpu9250_read_raw(accel_raw, gyro_raw);
-        mpu9250_convert_units(accel_raw, gyro_raw, accel_mps2, gyro_rads);
+        mpu6050_read_raw(accel_raw, gyro_raw);
+        mpu6050_convert_units(accel_raw, gyro_raw, accel_mps2, gyro_rads);
         MahonyAHRSupdateIMU(gyro_rads[0], gyro_rads[1], gyro_rads[2],
                              accel_mps2[0], accel_mps2[1], accel_mps2[2],
                              imu_q, xImuDt);

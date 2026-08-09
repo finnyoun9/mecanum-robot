@@ -22,7 +22,7 @@
 │  │ └─ PWM 驱动 (CH3/CH4/其他)   │   │
 │  │                              │   │
 │  │ USART DMA ←→ Raspberry Pi 5  │   │
-│  │ I2C ←→ IMU (MPU9250)         │   │
+│  │ I2C ←→ IMU (MPU6050)         │   │
 │  │ I2C ←→ ToF (VL53L0X)         │   │
 │  └──────────────────────────────┘   │
 │                                      │
@@ -58,7 +58,7 @@
 - STM32 GPIO (DIR) → TB6612 方向控制引脚 (A, B)
 - STM32 TIM PWM → TB6612 PWM 使能引脚 (PWMA, PWMB)
 - STM32 TIM 编码器模式 → 电机编码器 (A, B 相位)
-- STM32 I2C1 → MPU9250 (SCL, SDA)
+- STM32 I2C1 → MPU6050 (SCL, SDA)
 - STM32 I2C2 → VL53L0X (SCL, SDA)（可选：某些 ToF 模块支持 UART，但 I2C 更常见）
 - STM32 UART1 (TX/RX + DMA) ←→ Raspberry Pi UART (GPIO 14/15)
 - 共地：所有模块 GND 连接到电池负极
@@ -125,7 +125,7 @@
 | 编码器 FR | TIM (encoder) | TIM3 CH1+CH2 | PA6(CHA), PA7(CHB) | 位置/速度反馈 | 1:1 对应电机 FR |
 | 编码器 RL | TIM (encoder) | TIM4 CH1+CH2 | PB6(CHA), PB7(CHB) | 位置/速度反馈 | 1:1 对应电机 RL |
 | 编码器 RR | TIM (encoder) | TIM5 CH1+CH2 | PA0(CHA), PA1(CHB) | 位置/速度反馈 | 1:1 对应电机 RR |
-| MPU9250 IMU | I2C1 | I2C1 (SCL/SDA) | PB8(SCL), PB9(SDA) | 姿态/加速度/磁场 | 地址: 0x68 |
+| MPU6050 IMU | I2C1 | I2C1 (SCL/SDA) | PB8(SCL), PB9(SDA) | 姿态/加速度（6轴，无磁力计） | 地址: 0x68 |
 | VL53L0X ToF | I2C2 | I2C2 (SCL/SDA) | PB10(SCL), PB11(SDA) | 距离测量 (避障) | 地址: 0x29 或可配置 |
 | Raspberry Pi 5 | UART + DMA | USART1 + DMA | PA9(TX), PA10(RX) | 命令/反馈通信 | 波特率 115200 bps |
 | TB6612 #1 STBY | GPIO 输出 | PA2 (示例) | 1 GPIO | 使能/禁用芯片 | 高电平=使能 |
@@ -134,7 +134,7 @@
 **注意事项：**
 - 所有引脚号（PA0-PA15, PB0-PB15 等）为**示例**，实际应根据 STM32 芯片选型和可用引脚情况调整
 - TIM2/3/4/5 为通用定时器，编码器模式要求 CH1+CH2 同时可用；部分引脚可能复用于其他功能（如 UART/I2C），需在 CubeMX 中逐一检查
-- I2C 总线可配置不同速率（标准 100 kHz 或快速 400 kHz），确保 MPU9250 和 VL53L0X 兼容
+- I2C 总线可配置不同速率（标准 100 kHz 或快速 400 kHz），确保 MPU6050 和 VL53L0X 兼容
 - UART DMA 需配置接收和发送，推荐圆形缓冲区处理，避免溢出
 
 ---
@@ -163,7 +163,7 @@
   │
   └──→ 【Mini560 降压模块 #2: 12V → 5V / 3A】
         └─ STM32 开发板 (VIN 或 USB)
-              └─ 板载 3.3V LDO → MPU9250 / VL53L0X / 其他 3.3V 传感器
+              └─ 板载 3.3V LDO → MPU6050 / VL53L0X / 其他 3.3V 传感器
 ```
 
 ### 功率预算和设计决策
@@ -177,7 +177,7 @@
 | 电机 ×4 (堵转尖峰) | 12V | — | 1.5A ×4 | 72W |
 | USB 摄像头 | 5V | 0.2A | 0.3A | 1W |
 | TB6612 逻辑电路 ×2 | 5V | 0.01A | — | 忽略 |
-| MPU9250 + VL53L0X | 3.3V | 0.01A | — | 忽略 |
+| MPU6050 + VL53L0X | 3.3V | 0.01A | — | 忽略 |
 | **系统合计** | — | **~5A @ 12V** | **~8A @ 12V** | **~40W 典型** |
 
 #### 为什么使用 2 个 Mini560 而不是 1 个
@@ -242,7 +242,7 @@ TB6612 有两组电源引脚，设计上已隔离电机噪声：
 - [ ] 在 Pi 上运行 `sudo dmesg | tail -20` 检查 UART 设备是否识别（通常 `/dev/ttyS0` 或 `/dev/ttyAMA0`）
 - [ ] 运行串口监听工具（如 `picocom -b 115200 /dev/ttyS0`）
 - [ ] 在 STM32 上发送心跳包（HEARTBEAT 帧，CMD_ID = 0x1F），验证 Pi 接收
-- [ ] 确认 I2C 总线正常：`i2cdetect -y 1` 应显示 MPU9250 (0x68) 和 VL53L0X (0x29)
+- [ ] 确认 I2C 总线正常：`i2cdetect -y 1` 应显示 MPU6050 (0x68) 和 VL53L0X (0x29)
 
 ### 第四步：依次连接电机，空转测试
 
@@ -283,6 +283,6 @@ TB6612 有两组电源引脚，设计上已隔离电机噪声：
 - 《STM32CubeMX 外设配置指南》— 配置 TIM、UART、I2C 等外设
 - 《FreeRTOS 任务优先级管理》 — 确保 PID 控制任务优先级正确
 - TB6612FNG 数据手册 — 电机驱动芯片引脚定义和时序
-- MPU9250 寄存器手册 — IMU 初始化和数据读取
+- MPU6050 寄存器手册 — IMU 初始化和数据读取
 - VL53L0X API 文档 — ToF 传感器通信协议
 - ROS2 UART 通信 — 串口协议编解码参考
