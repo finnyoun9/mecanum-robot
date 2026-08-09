@@ -61,21 +61,25 @@ mecanum-robot/
 | 激光雷达 | LD19 / LD06 360° | 1 |
 | IMU | MPU6050 | 1 |
 | ToF 测距 | VL53L0X / VL53L1X | 1 |
-| 相机 | USB 摄像头 (或 OAK-D Lite) | 1 |
+| 相机 | 树莓派摄像头模块 (CSI 排线) | 1 |
 | 电源 | 3S 锂电池 + 降压模块 | 1 套 |
 
 ### 2. 树莓派 5 环境搭建
 
-```bash
-# 用 Raspberry Pi Imager 烧录 Ubuntu Server 24.04 (arm64)
-# 启动后执行：
-sudo apt update
-sudo apt install ros-jazzy-ros-base ros-jazzy-ros2-control \
-  ros-jazzy-ros2-controllers ros-jazzy-slam-toolbox \
-  ros-jazzy-navigation2 ros-jazzy-nav2-bringup
+树莓派用的是原装 **Raspberry Pi OS (Debian 12)**，不是 Ubuntu —— ROS2
+跑在 Ubuntu 24.04 的 Docker 容器里，不需要重刷系统。摄像头相关原理和
+处理方式见 [`docker/README.md`](docker/README.md)（摄像头留在宿主机
+原生跑，不进容器）。
 
-# 编译 ROS2 工作空间
-cd ros2_ws
+```bash
+git clone https://github.com/finnyoun9/mecanum-robot.git
+cd mecanum-robot
+
+# 首次运行会自动构建 ROS2 Jazzy 镜像，然后进入容器 shell
+./docker/run.sh
+
+# 容器内：
+cd /ros2_ws
 colcon build --symlink-install
 source install/setup.bash
 ```

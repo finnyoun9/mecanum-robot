@@ -64,21 +64,25 @@ mecanum-robot/
 | LiDAR | LD19 / LD06 360° | 1 |
 | IMU | MPU6050 | 1 |
 | ToF | VL53L0X / VL53L1X | 1 |
-| Camera | USB camera (or OAK-D Lite) | 1 |
+| Camera | Pi Camera Module (CSI ribbon) | 1 |
 | Battery | 3S LiPo + buck converter | 1 set |
 
 ### 2. Pi 5 Setup
 
-```bash
-# Flash Ubuntu Server 24.04 (arm64) with Raspberry Pi Imager
-# Boot, then:
-sudo apt update
-sudo apt install ros-jazzy-ros-base ros-jazzy-ros2-control \
-  ros-jazzy-ros2-controllers ros-jazzy-slam-toolbox \
-  ros-jazzy-navigation2 ros-jazzy-nav2-bringup
+The Pi runs its stock **Raspberry Pi OS (Debian 12)**, not Ubuntu — ROS2
+runs inside an Ubuntu 24.04 Docker container instead of reflashing the
+host. See [`docker/README.md`](docker/README.md) for why and how the
+camera is handled (it stays native on the host, outside the container).
 
-# Build
-cd ros2_ws
+```bash
+git clone https://github.com/finnyoun9/mecanum-robot.git
+cd mecanum-robot
+
+# Builds the ROS2 Jazzy image on first run, then drops you into a shell
+./docker/run.sh
+
+# Inside the container:
+cd /ros2_ws
 colcon build --symlink-install
 source install/setup.bash
 ```
