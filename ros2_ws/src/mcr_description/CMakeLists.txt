@@ -3,7 +3,7 @@ project(mcr_description)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf launch
+install(DIRECTORY urdf
   DESTINATION share/${PROJECT_NAME}
 )
 
