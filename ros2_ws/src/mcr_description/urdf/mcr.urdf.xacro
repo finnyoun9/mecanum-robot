@@ -55,7 +55,7 @@
 
   <!-- Mecanum wheel macro -->
   <xacro:macro name="mecanum_wheel"
-               params="name prefix x y parent
+               params="name x y parent
                        roller_angle:=0.785398">  <!-- ±45° = ±π/4 rad -->
     <joint name="${name}_joint" type="continuous">
       <parent link="${parent}"/>
