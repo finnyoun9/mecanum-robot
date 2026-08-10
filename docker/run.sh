@@ -26,12 +26,26 @@ IMAGE_NAME="mcr-ros2:jazzy"
 # started failing resolution mid-build in testing, even though it resolved
 # fine at first. --network host skips Docker's DNS layer entirely and uses
 # the host's own resolver for the RUN steps, which doesn't have that problem.
+#
+# The Pi's mihomo proxy (127.0.0.1:7890) makes those apt downloads
+# dramatically faster, so pass it through as build args when it's actually
+# listening — otherwise the build falls back to the direct connection.
+BUILD_ARGS=()
+if timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/7890' 2>/dev/null; then
+    BUILD_ARGS+=(--build-arg http_proxy=http://127.0.0.1:7890)
+    BUILD_ARGS+=(--build-arg https_proxy=http://127.0.0.1:7890)
+fi
+
+build() {
+    docker build --network host "${BUILD_ARGS[@]}" -t "$IMAGE_NAME" -f "$SCRIPT_DIR/Dockerfile" "$REPO_ROOT"
+}
+
 if [[ "$1" == "--build" ]]; then
-    docker build --network host -t "$IMAGE_NAME" -f "$SCRIPT_DIR/Dockerfile" "$REPO_ROOT"
+    build
     shift
 elif ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
     echo "Image '$IMAGE_NAME' not found, building it now..."
-    docker build --network host -t "$IMAGE_NAME" -f "$SCRIPT_DIR/Dockerfile" "$REPO_ROOT"
+    build
 fi
 
 # Candidate serial devices — STM32 link and LD06 LiDAR. Pi 5's UART
