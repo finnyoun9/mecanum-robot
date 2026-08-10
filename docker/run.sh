@@ -59,10 +59,14 @@ for dev in /dev/ttyAMA10 /dev/ttyAMA0 /dev/ttyUSB0 /dev/ttyACM0; do
     fi
 done
 
+# mcr_bringup's CMake references the shared protocol sources via a path that
+# resolves to /shared inside the container, so that directory must be mounted
+# for the workspace to build.
 docker run -it --rm \
     --name mcr_ros2 \
     --network host \
     "${DEVICE_ARGS[@]}" \
     -v "$REPO_ROOT/ros2_ws:/ros2_ws" \
+    -v "$REPO_ROOT/shared:/shared" \
     "$IMAGE_NAME" \
     "${@:-bash}"

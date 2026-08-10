@@ -19,8 +19,12 @@ static constexpr double LX_DEFAULT            = 0.10;     /* Half wheelbase fron
 static constexpr double LY_DEFAULT            = 0.12;     /* Half track-width left-right */
 static constexpr int    SERIAL_BAUD_DEFAULT   = 921600;
 
+/* Encoder edges per wheel revolution — must match firmware encoder.h:
+   ENCODER_CPR(11) * 4 (quadrature) * GEAR_RATIO(34) = 1496 */
+static constexpr double EDGES_PER_WHEEL_REV = 11.0 * 4.0 * 34.0;
+
 MCRHardwareInterface::MCRHardwareInterface()
-: serial_device_("/dev/ttyAMA0")
+: serial_device_("/dev/ttyAMA10")   /* Pi 5 hardware UART (see docker/run.sh) */
 , serial_baud_(SERIAL_BAUD_DEFAULT)
 , joints_(4)
 , odom_x_(0.0), odom_y_(0.0), odom_yaw_(0.0)
@@ -38,13 +42,10 @@ MCRHardwareInterface::~MCRHardwareInterface()
   }
 }
 
-hardware_interface::return_type MCRHardwareInterface::configure(
-  const hardware_interface::HardwareInfo & info)
+hardware_interface::CallbackReturn MCRHardwareInterface::on_init(
+  const hardware_interface::HardwareComponentInterfaceParams & params)
 {
-  if (hardware_interface::SystemInterface::configure(info) !=
-      hardware_interface::return_type::OK) {
-    return hardware_interface::return_type::ERROR;
-  }
+  const auto & info = params.hardware_info;
 
   /* Read parameters from hardware info */
   for (const auto & param : info.hardware_parameters) {
@@ -72,15 +73,17 @@ hardware_interface::return_type MCRHardwareInterface::configure(
   if (!serial_->open(serial_device_, serial_baud_)) {
     RCLCPP_ERROR(rclcpp::get_logger("MCRHardwareInterface"),
       "Failed to open serial port: %s", serial_device_.c_str());
-    return hardware_interface::return_type::ERROR;
+    return hardware_interface::CallbackReturn::ERROR;
   }
 
   RCLCPP_INFO(rclcpp::get_logger("MCRHardwareInterface"),
     "Serial port opened: %s", serial_device_.c_str());
 
-  return hardware_interface::return_type::OK;
+  return hardware_interface::CallbackReturn::SUCCESS;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 std::vector<hardware_interface::StateInterface>
 MCRHardwareInterface::export_state_interfaces()
 {
@@ -120,7 +123,10 @@ MCRHardwareInterface::export_state_interfaces()
 
   return ifaces;
 }
+#pragma GCC diagnostic pop
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 std::vector<hardware_interface::CommandInterface>
 MCRHardwareInterface::export_command_interfaces()
 {
@@ -138,8 +144,10 @@ MCRHardwareInterface::export_command_interfaces()
 
   return ifaces;
 }
+#pragma GCC diagnostic pop
 
-hardware_interface::return_type MCRHardwareInterface::start()
+hardware_interface::CallbackReturn MCRHardwareInterface::on_activate(
+  const rclcpp_lifecycle::State & /*previous_state*/)
 {
   /* Clear stale state */
   for (auto & j : joints_) {
@@ -152,18 +160,19 @@ hardware_interface::return_type MCRHardwareInterface::start()
 
   first_read_ = true;
 
-  RCLCPP_INFO(rclcpp::get_logger("MCRHardwareInterface"), "Started");
-  return hardware_interface::return_type::OK;
+  RCLCPP_INFO(rclcpp::get_logger("MCRHardwareInterface"), "Activated");
+  return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::return_type MCRHardwareInterface::stop()
+hardware_interface::CallbackReturn MCRHardwareInterface::on_deactivate(
+  const rclcpp_lifecycle::State & /*previous_state*/)
 {
   /* Send emergency stop and zero commands */
   if (serial_) serial_->send_emergency_stop();
   for (auto & j : joints_) j.command = 0.0;
 
-  RCLCPP_INFO(rclcpp::get_logger("MCRHardwareInterface"), "Stopped");
-  return hardware_interface::return_type::OK;
+  RCLCPP_INFO(rclcpp::get_logger("MCRHardwareInterface"), "Deactivated");
+  return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::return_type MCRHardwareInterface::read(

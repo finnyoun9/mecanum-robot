@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.8)
 project(mcr_bringup)
 
+# ros2_control plugins must be loaded by pluginlib as shared libraries
+set(BUILD_SHARED_LIBS ON)
+
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)

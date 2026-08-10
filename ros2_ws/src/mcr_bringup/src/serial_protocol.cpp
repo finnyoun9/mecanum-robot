@@ -127,7 +127,7 @@ bool SerialProtocol::read_odometry(odom_feedback_t & odom, int timeout_ms)
 
   uint8_t cmd, payload[PROTO_MAX_PAYLOAD], pay_len, seq;
   int ret = proto_decode(rx_buf_.data(), static_cast<uint8_t>(rx_buf_len_),
-                         &cmd, &payload, &pay_len, &seq);
+                         &cmd, payload, &pay_len, &seq);
   if (ret < 0) {
     /* No valid frame at head — scan for sync */
     for (size_t i = 1; i < rx_buf_len_; i++) {

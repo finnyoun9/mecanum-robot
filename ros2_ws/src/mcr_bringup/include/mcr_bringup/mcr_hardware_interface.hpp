@@ -19,10 +19,24 @@
 #include <vector>
 #include <string>
 
+// The export_state_interfaces()/export_command_interfaces() overrides below
+// use the legacy ros2_control export API, which Jazzy marks [[deprecated]] in
+// favour of on_export_state_interfaces(). ResourceManager still dispatches the
+// legacy entry point first and only falls back to the on_export_* methods when
+// it returns an empty list, so overriding it is the supported backward-compat
+// path. Silence the deprecation warnings accordingly.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/handle.hpp"
 #include "hardware_interface/hardware_info.hpp"
+#include "hardware_interface/types/hardware_component_interface_params.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
+#include "rclcpp_lifecycle/state.hpp"
+
+#pragma GCC diagnostic pop
+
 #include "rclcpp/rclcpp.hpp"
 
 #include "mcr_bringup/serial_protocol.hpp"
@@ -37,15 +51,21 @@ public:
   MCRHardwareInterface();
   ~MCRHardwareInterface() override;
 
-  /* SystemInterface overrides */
-  hardware_interface::return_type configure(
-    const hardware_interface::HardwareInfo & info) override;
+  /* SystemInterface lifecycle (ros2_control >= 4.x API) */
+  hardware_interface::CallbackReturn on_init(
+    const hardware_interface::HardwareComponentInterfaceParams & params) override;
 
+  hardware_interface::CallbackReturn on_activate(
+    const rclcpp_lifecycle::State & previous_state) override;
+  hardware_interface::CallbackReturn on_deactivate(
+    const rclcpp_lifecycle::State & previous_state) override;
+
+  /* Interface export (legacy API, still dispatched in Jazzy) */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
   std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
-
-  hardware_interface::return_type start() override;
-  hardware_interface::return_type stop() override;
+#pragma GCC diagnostic pop
 
   hardware_interface::return_type read(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
