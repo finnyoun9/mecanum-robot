@@ -68,5 +68,6 @@ docker run -it --rm \
     "${DEVICE_ARGS[@]}" \
     -v "$REPO_ROOT/ros2_ws:/ros2_ws" \
     -v "$REPO_ROOT/shared:/shared" \
+    -v "$REPO_ROOT/tools:/tools" \
     "$IMAGE_NAME" \
     "${@:-bash}"
