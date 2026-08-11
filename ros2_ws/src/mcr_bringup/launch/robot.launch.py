@@ -113,6 +113,24 @@ def generate_launch_description():
         ],
     )
 
+    # Bridge /cmd_vel (Twist) -> mecanum_drive_controller/reference
+    # (TwistStamped). The Jazzy mecanum_drive_controller has no /cmd_vel
+    # subscriber, so users/Nav2 publish Twist on /cmd_vel as usual and this
+    # node forwards it to the controller's reference interface.
+    cmd_vel_relay = Node(
+        package='mcr_bringup',
+        executable='cmd_vel_relay',
+        output='screen',
+    )
+
+    # Accumulates /odometry/filtered poses into a nav_msgs/Path so RViz2 can
+    # draw the traveled trajectory (its Path display only takes nav_msgs/Path).
+    odom_to_path = Node(
+        package='mcr_bringup',
+        executable='odom_to_path',
+        output='screen',
+    )
+
     # --- Laser driver (LD19/LD06) — uncomment when wired ---
     # laser_node = Node(
     #     package='ldlidar_stl_ros2',
@@ -141,4 +159,7 @@ def generate_launch_description():
 
         # EKF waits for its inputs, so it can start alongside the spawners.
         ekf_node,
+
+        cmd_vel_relay,
+        odom_to_path,
     ])

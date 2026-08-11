@@ -126,6 +126,8 @@ class Stm32Sim:
         if cmd == CMD_VEL_CTRL and len(payload) == 16:
             self.wheel_w = list(struct.unpack("<4f", payload))
             self.stopped = False
+            print("[sim] VEL seq=%d w=[%.3f %.3f %.3f %.3f]" %
+                  (seq, *self.wheel_w), flush=True)
         elif cmd == CMD_EMERGENCY_STOP:
             self.wheel_w = [0.0] * 4
             self.stopped = True

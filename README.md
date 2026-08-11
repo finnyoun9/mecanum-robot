@@ -17,10 +17,14 @@ Covers the complete stack: bare-metal drivers → real-time OS → communication
 - **串口二进制协议** ✅ — 自定义协议 + CRC16-MODBUS 校验,Pi 与 STM32 共享的 C 库
 - **麦克纳姆轮运动学** ✅ — 正/逆运动学解算 + 单元测试(gtest,固件内也有 C 版)
 - **NRF24L01 无线遥控** ✅ — 2.4GHz 手柄全向遥控:机器人端接收驱动 + 摇杆→全向映射 + C 版逆运动学,CI 单测通过(见 [docs/remote_control.md](docs/remote_control.md))
+- **ROS2 驱动闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → 协议级 STM32 UART 模拟器全链路打通;0.3 m/s 指令实测里程计 0.302 m/s;麦克纳姆方形轨迹(含横向平移)在 RViz2 中渲染(见下方截图)
 - **STM32 FreeRTOS 固件** 🚧 — 4 路 PID 速度闭环框架已在 `firmware/`,真机联调待接线
 - **Nav2 + SLAM** 🚧 — 配置骨架已就位,待与里程计/激光数据联调
 
-> RViz2 渲染效果(无头 Xvfb 截图,1280×800):[docs/screenshots/rviz2.png](docs/screenshots/rviz2.png)
+> RViz2 渲染效果(无头 Xvfb 截图,1280×800):
+> - 静止渲染:[docs/screenshots/rviz2.png](docs/screenshots/rviz2.png)
+> - 麦克纳姆方形轨迹(边 0.45 m,含横向平移,机器人运动中):[docs/screenshots/rviz2_mecanum_square_moving.png](docs/screenshots/rviz2_mecanum_square_moving.png)
+> - 方形轨迹完成:[docs/screenshots/rviz2_mecanum_square_complete.png](docs/screenshots/rviz2_mecanum_square_complete.png)
 
 ## Development Environment / 开发环境
 

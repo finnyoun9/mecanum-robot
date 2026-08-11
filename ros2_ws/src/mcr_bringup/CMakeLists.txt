@@ -89,6 +89,18 @@ install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
 
+# /cmd_vel -> controller reference relay (Python node)
+install(PROGRAMS scripts/cmd_vel_relay.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME cmd_vel_relay
+)
+
+# Odometry -> Path trail (Python node, for RViz visualization)
+install(PROGRAMS scripts/odom_to_path.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME odom_to_path
+)
+
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
 
