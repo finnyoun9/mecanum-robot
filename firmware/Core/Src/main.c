@@ -24,6 +24,8 @@
 #include "ahrs.h"
 #include "mpu6050.h"
 #include "tof_sensor.h"
+#include "nrf24l01.h"
+#include "remote_control.h"
 
 /* HAL (uncomment in real project) */
 /* #include "main.h" */
@@ -34,6 +36,7 @@ static TaskHandle_t hCtrlTask    = NULL;
 static TaskHandle_t hCommTask    = NULL;
 static TaskHandle_t hSensorTask  = NULL;
 static TaskHandle_t hMonitorTask = NULL;
+static TaskHandle_t hRemoteTask  = NULL;
 
 /* --- Queues --- */
 static QueueHandle_t xCmdQueue;   /* Received commands → CtrlTask */
@@ -249,6 +252,38 @@ static void SensorTask(void *pvParameters) {
 }
 
 /* ======================================================================== */
+/*  RemoteTask: poll NRF24L01 (20 Hz), apply wireless remote control         */
+/* ======================================================================== */
+
+static void RemoteTask(void *pvParameters) {
+    (void)pvParameters;
+
+    remote_state_t rstate;
+    remote_init(&rstate);
+
+    nrf24l01_init();
+
+    for (;;) {
+        if (nrf24l01_receive()) {
+            remote_result_t res;
+            if (remote_process(nrf24l01_rx_packet(), &rstate, &res)) {
+                if (res.key == REMOTE_KEY_ESTOP) {
+                    robot_emergency_stop();
+                }
+                if (rstate.enabled) {
+                    robot_set_target_wheels(res.wheel_speed);
+                } else if (res.key == REMOTE_KEY_TOGGLE_ENABLE) {
+                    /* Just disabled — zero the last remote speeds. */
+                    float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                    robot_set_target_wheels(zero);
+                }
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+/* ======================================================================== */
 /*  MonitorTask: watchdog + debug output (1 Hz)                              */
 /* ======================================================================== */
 
@@ -299,6 +334,7 @@ int main(void) {
     xTaskCreate(CtrlTask,    "Ctrl",   512, NULL, 4, &hCtrlTask);
     xTaskCreate(CommTask,    "Comm",   512, NULL, 3, &hCommTask);
     xTaskCreate(SensorTask,  "Sensor", 256, NULL, 2, &hSensorTask);
+    xTaskCreate(RemoteTask,  "Remote", 256, NULL, 2, &hRemoteTask);
     xTaskCreate(MonitorTask, "Monitor",128, NULL, 1, &hMonitorTask);
 
     /* --- Start scheduler (never returns) --- */

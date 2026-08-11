@@ -278,6 +278,26 @@ TB6612 有两组电源引脚，设计上已隔离电机噪声：
 
 ---
 
+## NRF24L01 无线遥控接线 (Wireless Remote)
+
+机器人端 STM32 接 NRF24L01+ 接收模块,配合江协科技无线手柄实现全向遥控。详见 [docs/remote_control.md](remote_control.md)。
+
+| NRF24L01 引脚 | STM32 GPIO | 说明 |
+|------|---------|------|
+| CE | PA8 | 片选使能 |
+| CSN | PA15 | SPI 片选 (JTAG 释放后使用) |
+| SCK | PB3 | SPI 时钟 (JTAG 释放后使用) |
+| MISO | PB4 | SPI 数据入 (上拉输入) |
+| MOSI | PB5 | SPI 数据出 |
+| VCC | 3.3V | 必须 3.3V,不可接 5V |
+| GND | GND | 共地 |
+
+- 软件 SPI 驱动在 `firmware/Core/Src/nrf24l01.c`,引脚宏在文件顶部,换板子改宏 + `gpio_init()` 即可
+- 引脚占用 PA15/PB3/PB4(默认 JTAG),初始化时已禁用 JTAG 释放
+- 遥控启用:手柄按 K1;紧急停止:K9。失联 100 ms 自动急停
+
+---
+
 ## 参考资源
 
 - 《STM32CubeMX 外设配置指南》— 配置 TIM、UART、I2C 等外设

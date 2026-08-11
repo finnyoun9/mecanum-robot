@@ -15,7 +15,8 @@ Covers the complete stack: bare-metal drivers → real-time OS → communication
 - **ros2_control 硬件接口** ✅ — 自定义 `SystemInterface` 已移植到 Jazzy 4.x API(`on_init` / `on_activate` / `on_deactivate`),以共享库插件加载
 - **URDF 模型** ✅ — 4 麦克纳姆轮 + 传感器模型,已通过 xacro 展开并在 RViz2 中渲染(见下方截图)
 - **串口二进制协议** ✅ — 自定义协议 + CRC16-MODBUS 校验,Pi 与 STM32 共享的 C 库
-- **麦克纳姆轮运动学** ✅ — 正/逆运动学解算 + 单元测试(gtest)
+- **麦克纳姆轮运动学** ✅ — 正/逆运动学解算 + 单元测试(gtest,固件内也有 C 版)
+- **NRF24L01 无线遥控** ✅ — 2.4GHz 手柄全向遥控:机器人端接收驱动 + 摇杆→全向映射 + C 版逆运动学,CI 单测通过(见 [docs/remote_control.md](docs/remote_control.md))
 - **STM32 FreeRTOS 固件** 🚧 — 4 路 PID 速度闭环框架已在 `firmware/`,真机联调待接线
 - **Nav2 + SLAM** 🚧 — 配置骨架已就位,待与里程计/激光数据联调
 
@@ -48,6 +49,7 @@ Raspberry Pi 5 (Ubuntu 24.04 + ROS2 Jazzy)
 STM32 (FreeRTOS + HAL)
   ├── 4 路 PID 速度闭环 (100 Hz)
   ├── 4 路正交编码器读数
+  ├── NRF24L01 无线遥控 (全向控制)
   ├── ToF 紧急避障刹车
   ├── IMU 姿态解算 (Mahony 滤波器)
   └── DMA 串口通信
@@ -58,9 +60,10 @@ STM32 (FreeRTOS + HAL)
 ```
 mecanum-robot/
 ├── firmware/                          # STM32 FreeRTOS 固件
-│   └── Core/
-│       ├── Inc/                       # 头文件 (pid, motor, encoder, robot_control)
-│       └── Src/                       # 实现 + main.c (FreeRTOS 5 任务)
+│   ├── Core/
+│   │   ├── Inc/                       # 头文件 (pid, motor, encoder, robot_control)
+│   │   └── Src/                       # 实现 + main.c (FreeRTOS 任务)
+│   └── remote_controller/             # NRF24L01 无线遥控器固件 (江协科技)
 ├── shared/                            # 通信协议 (Pi 和 STM32 共享)
 │   ├── protocol.h                     # 帧格式定义
 │   └── protocol.c                     # CRC16 + 编解码
@@ -77,6 +80,7 @@ mecanum-robot/
     ├── resources.md                   # 硬件选型与供应商参考
     ├── ros2-guide.md                  # ROS2 学习资源整理
     ├── ros2-learning.md               # ROS2 学习笔记
+    ├── remote_control.md              # NRF24L01 无线遥控方案 (协议/接线/映射)
     └── screenshots/                   # 界面截图 (rviz2 渲染)
 ```
 
@@ -95,6 +99,7 @@ mecanum-robot/
 | IMU | MPU6050 | 1 |
 | ToF 测距 | VL53L0X / VL53L1X | 1 |
 | 相机 Camera | 树莓派摄像头模块 (CSI 排线) | 1 |
+| 无线遥控 Remote | NRF24L01+ 收发模块 + 江协科技手柄 | 2 |
 | 电源 Power | 3S 锂电池 + 降压模块 | 1 套 |
 
 ### 2. Pi 5 Setup / 树莓派 5 环境搭建

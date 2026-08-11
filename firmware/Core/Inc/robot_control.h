@@ -71,6 +71,13 @@ void robot_ctrl_loop(void);
 /** Process an incoming command frame from Pi */
 void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len);
 
+/**
+ * @brief Set wheel velocity targets from the wireless remote.
+ * Also refreshes the comm watchdog tick, so a live remote keeps the
+ * watchdog from firing while the Pi is not sending UART commands.
+ */
+void robot_set_target_wheels(const float w[4]);
+
 /** Prepare and send odometry feedback frame to Pi */
 void robot_send_odometry(void);
 

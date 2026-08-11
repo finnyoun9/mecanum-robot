@@ -83,6 +83,16 @@ void robot_ctrl_loop(void) {
     /* --- IMU read (done inside IMU task in full impl) --- */
 }
 
+void robot_set_target_wheels(const float w[4]) {
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+        g_robot.target_w[i] = w[i];
+    }
+    /* Treat the remote as a live command source: refreshing the watchdog
+     * tick keeps the 100ms comm timeout from braking mid-remote-drive. */
+    g_robot.last_rx_tick = hal_get_tick_ms();
+    g_robot.comm_timeout = false;
+}
+
 void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len) {
     g_robot.last_rx_tick = hal_get_tick_ms();
     g_robot.comm_timeout = false;

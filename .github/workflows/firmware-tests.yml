@@ -27,3 +27,13 @@ jobs:
       run: |
         gcc -std=c99 -Wall -Wextra -I firmware/Core/Inc firmware/Core/Test/test_ahrs.c firmware/Core/Src/ahrs.c -lm -o /tmp/test_ahrs
         /tmp/test_ahrs
+
+    - name: Run mecanum IK tests
+      run: |
+        gcc -std=c11 -Wall -Wextra -I firmware/Core/Inc firmware/Core/Test/test_mecanum_ik.c firmware/Core/Src/mecanum_ik.c -lm -o /tmp/test_mecanum_ik
+        /tmp/test_mecanum_ik
+
+    - name: Run remote control tests
+      run: |
+        gcc -std=c11 -Wall -Wextra -I firmware/Core/Inc firmware/Core/Test/test_remote_control.c firmware/Core/Src/remote_control.c firmware/Core/Src/mecanum_ik.c -lm -o /tmp/test_remote_control
+        /tmp/test_remote_control
