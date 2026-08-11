@@ -19,6 +19,7 @@ Covers the complete stack: bare-metal drivers → real-time OS → communication
 - **NRF24L01 无线遥控** ✅ — 2.4GHz 手柄全向遥控:机器人端接收驱动 + 摇杆→全向映射 + C 版逆运动学,CI 单测通过(见 [docs/remote_control.md](docs/remote_control.md))
 - **ROS2 驱动闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → 协议级 STM32 UART 模拟器全链路打通;0.3 m/s 指令实测里程计 0.302 m/s;麦克纳姆方形轨迹(含横向平移)在 RViz2 中渲染(见下方截图)
 - **STM32 FreeRTOS 固件** 🚧 — 4 路 PID 速度闭环框架已在 `firmware/`,真机联调待接线
+- **SIL 软件在环测试** ✅ — 固件编译为 Linux 原生可执行文件,Mock HAL + FreeRTOS 调度模拟器,CI 自动验证 PID 闭环(见 [docs/resume-highlights.md](docs/resume-highlights.md))
 - **Nav2 + SLAM** 🚧 — 配置骨架已就位,待与里程计/激光数据联调
 
 > RViz2 渲染效果(无头 Xvfb 截图,1280×800):
@@ -66,7 +67,11 @@ mecanum-robot/
 ├── firmware/                          # STM32 FreeRTOS 固件
 │   ├── Core/
 │   │   ├── Inc/                       # 头文件 (pid, motor, encoder, robot_control)
-│   │   └── Src/                       # 实现 + main.c (FreeRTOS 任务)
+│   │   ├── Src/                       # 实现 + main.c (FreeRTOS 任务)
+│   │   ├── SIL/                       # SIL 软件在环测试 (★★★ 简历亮点)
+│   │   │   ├── sil_main.c             #   测试入口,闭环验证 PID + 编码器 + 协议
+│   │   │   └── mocks/                 #   Mock HAL (GPIO/TIM/UART/I2C/FreeRTOS)
+│   │   └── CMakeLists.txt             # SIL 编译脚本
 │   └── remote_controller/             # NRF24L01 无线遥控器固件 (江协科技)
 ├── shared/                            # 通信协议 (Pi 和 STM32 共享)
 │   ├── protocol.h                     # 帧格式定义
@@ -85,6 +90,7 @@ mecanum-robot/
     ├── ros2-guide.md                  # ROS2 学习资源整理
     ├── ros2-learning.md               # ROS2 学习笔记
     ├── remote_control.md              # NRF24L01 无线遥控方案 (协议/接线/映射)
+    ├── resume-highlights.md           # ★ 简历亮点与面试准备 (SIL/协议/RTOS/PID)
     └── screenshots/                   # 界面截图 (rviz2 渲染)
 ```
 
@@ -163,9 +169,10 @@ python point_cloud_scanner.py
 
 ## Key Skills / 核心技术展示
 
+- **SIL 软件在环测试**:Mock HAL 层 + FreeRTOS 轮询调度模拟,固件编译为 Linux 原生可执行文件,CI 自动闭环验证 (★★★)
 - **FreeRTOS**:5 任务实时调度,优先级管理,栈溢出监控
 - **PID 控制**:4 路独立速度闭环 (100 Hz),增量式算法 + 抗积分饱和
-- **UART/DMA 通信**:自定义二进制协议(双字节帧同步 + CRC16-MODBUS + 序号校验)
+- **UART/DMA 通信**:自定义二进制协议(双字节帧同步 + CRC16-MODBUS + 序号校验),状态机解析器
 - **麦克纳姆轮运动学**:正/逆运动学,支持全向移动(横移 / 斜走 / 原地旋转)
 - **ros2_control**:自定义 `SystemInterface` 硬件接口,桥接串口 ↔ ROS2 控制器
 - **Nav2 导航**:全向路径规划 (DWB 局部规划器 + SmacPlannerHybrid 全局规划器)
