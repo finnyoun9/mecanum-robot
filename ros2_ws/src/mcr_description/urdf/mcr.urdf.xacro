@@ -183,7 +183,7 @@
   <ros2_control name="MCRSystem" type="system">
     <hardware>
       <plugin>mcr_bringup/MCRHardwareInterface</plugin>
-      <param name="serial_device">${arg('serial_device')}</param>
+      <param name="serial_device">${xacro.arg('serial_device')}</param>
       <param name="serial_baud">921600</param>
       <param name="wheel_radius">${wheel_radius}</param>
       <param name="lx">${lx}</param>
