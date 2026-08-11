@@ -196,11 +196,35 @@ ssh pi@<IP> 'docker exec mcr_ros2 apt-get update && docker exec mcr_ros2 apt-get
 # 2. 启动虚拟显示器 + RViz2 + VNC
 ssh pi@<IP> 'docker exec -d mcr_ros2 Xvfb :99 -screen 0 1280x800x24 +extension GLX'
 ssh pi@<IP> 'docker exec -d -e DISPLAY=:99 -e LIBGL_ALWAYS_SOFTWARE=1 mcr_ros2 bash -c "source /opt/ros/jazzy/setup.bash && rviz2 -d /ros2_ws/src/mcr_navigation/config/nav2_default_view.rviz"'
-ssh pi@<IP> 'docker exec -d mcr_ros2 x11vnc -display :99 -forever -nopw -rfbport 5900'
+ssh pi@<IP> 'docker exec -d mcr_ros2 x11vnc -display :99 -forever -shared -nopw -nossl -nounixpw -rfbport 5901 -o /tmp/x11vnc-5901.log'
 
-# 3. VNC 客户端连接 192.168.0.116:5900
-#    Mac: open vnc://192.168.0.116:5900
-#    Win: RealVNC / TightVNC → 192.168.0.116:5900
+# 3. VNC 客户端连接 192.168.0.116:5901
+#    Mac: open vnc://192.168.0.116:5901
+#    Win: TigerVNC / RealVNC / TightVNC → 192.168.0.116:5901
+```
+
+#### VNC 端口陷阱（2026-08-11 实机验证）
+
+Raspberry Pi OS 桌面自带的 `wayvnc` 已占用宿主机 `5900`。容器使用
+`--network host`，因此容器内的 `x11vnc` 也不能绑定 `5900`。如果客户端连
+`192.168.0.116:5900`，实际连到的是 `wayvnc`，会出现账号密码提示或
+`No matching security types`，而不是 ROS2 的 Xvfb 画面。
+
+固定约定：
+
+- `5900`：Raspberry Pi OS 的 `wayvnc`，不要用于本项目 RViz2。
+- `5901`：容器内 `Xvfb :99` 对应的 `x11vnc`，当前 RViz2 远程入口。
+- TigerVNC 连接：`vncviewer -SecurityTypes None 192.168.0.116:5901`。
+- `x11vnc` 使用 `-nossl -nounixpw -nopw`，局域网内免账号密码；不要暴露到公网。
+
+启动前先查端口，避免再次误连：
+
+```bash
+# 预期看到 wayvnc 占用 5900，x11vnc 占用 5901
+ssh pi@192.168.0.116 'sudo ss -ltnp | grep -E ":5900|:5901"'
+
+# 查看 x11vnc 启动失败、端口冲突等日志
+ssh pi@192.168.0.116 'docker exec mcr_ros2 tail -50 /tmp/x11vnc-5901.log'
 ```
 
 ---

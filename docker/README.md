@@ -59,3 +59,29 @@ re-launch.
 `--network host` is used so ROS2's DDS discovery (UDP multicast) works
 exactly as it would on a native install — no port mapping or bridging
 needed between the container and the Pi's network.
+
+## Remote RViz2 (Xvfb + VNC)
+
+The Pi desktop already runs `wayvnc` on host port `5900`. Because the ROS2
+container uses host networking, the project VNC server must use `5901`.
+
+```bash
+# On the Pi host
+docker exec -d mcr_ros2 Xvfb :99 -screen 0 1280x800x24 +extension GLX
+docker exec -d -e DISPLAY=:99 -e LIBGL_ALWAYS_SOFTWARE=1 mcr_ros2 \
+  bash -c 'source /opt/ros/jazzy/setup.bash && \
+  rviz2 -d /ros2_ws/src/mcr_navigation/config/nav2_default_view.rviz'
+docker exec -d mcr_ros2 x11vnc -display :99 -forever -shared \
+  -nopw -nossl -nounixpw -rfbport 5901 -o /tmp/x11vnc-5901.log
+```
+
+Connect the VNC client to `<PI_IP>:5901`. For TigerVNC on Windows:
+
+```powershell
+vncviewer -SecurityTypes None 192.168.0.116:5901
+```
+
+Do not use `5900`: that reaches Raspberry Pi OS `wayvnc` and may show a Unix
+login prompt or `No matching security types` instead of the RViz2 desktop.
+The `5901` endpoint is passwordless and intended only for the trusted LAN;
+do not expose it to the Internet.
