@@ -49,4 +49,19 @@ void motor_resume(void);
 /** Get whether motors are in emergency-stop state. */
 bool motor_is_stopped(void);
 
+/**
+ * @brief Wire a motor to a TIM channel + DIR GPIO.
+ *
+ * In production this is a static pin-mapping table; for SIL testing it lets
+ * the test harness connect mock TIM handles at runtime.
+ *
+ * @param id         Motor index
+ * @param htim       TIM handle (mock_tim_t* in SIL, real TIM_HandleTypeDef* on HW)
+ * @param dir_port   DIR GPIO port (NULL = mock)
+ * @param dir_pin    DIR GPIO pin
+ * @param tim_ch     TIM channel (TIM_CHANNEL_1..4)
+ */
+void motor_set_tim(motor_id_t id, void *htim, void *dir_port,
+                   uint16_t dir_pin, uint32_t tim_ch);
+
 #endif /* MOTOR_H */

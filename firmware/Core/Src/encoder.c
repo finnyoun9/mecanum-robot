@@ -7,10 +7,8 @@
  */
 
 #include "encoder.h"
+#include "tim.h"
 #include <string.h>
-
-/* --- Replace with actual HAL includes --- */
-/* #include "tim.h" */
 
 /*
  * Example encoder TIM mapping:
@@ -30,13 +28,22 @@ typedef struct {
 static encoder_ctx_t encoders[MOTOR_COUNT];
 
 void encoder_init(void) {
+    /* Save htim pointers before clearing — they may have been wired by
+     * encoder_set_tim() before robot_init() (needed for SIL testing). */
+    void *saved_htim[MOTOR_COUNT];
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+        saved_htim[i] = encoders[i].htim;
+    }
+
     memset(encoders, 0, sizeof(encoders));
 
-    /* For each TIM in encoder mode, start it:
     for (int i = 0; i < MOTOR_COUNT; i++) {
-        HAL_TIM_Encoder_Start(encoders[i].htim, TIM_CHANNEL_ALL);
+        encoders[i].htim = saved_htim[i];
+        if (encoders[i].htim) {
+            HAL_TIM_Encoder_Start((TIM_HandleTypeDef *)encoders[i].htim,
+                                  TIM_CHANNEL_ALL);
+        }
     }
-    */
 }
 
 int32_t encoder_get_count(motor_id_t id) {
@@ -45,8 +52,7 @@ int32_t encoder_get_count(motor_id_t id) {
     encoder_ctx_t *e = &encoders[id];
     if (!e->htim) return 0;
 
-    /* uint16_t raw = __HAL_TIM_GET_COUNTER(e->htim); -- uncomment with HAL */
-    uint16_t raw = 0; /* placeholder */
+    uint16_t raw = __HAL_TIM_GET_COUNTER((TIM_HandleTypeDef *)e->htim);
 
     /* Detect 16-bit wrap (TIM counts UP in encoder mode by default) */
     int16_t delta = (int16_t)(raw - e->last_cnt);
@@ -81,5 +87,11 @@ void encoder_reset_all(void) {
         encoders[i].accum      = 0;
         encoders[i].last_cnt   = 0;
         encoders[i].prev_count = 0;
+    }
+}
+
+void encoder_set_tim(motor_id_t id, void *htim) {
+    if (id < MOTOR_COUNT) {
+        encoders[id].htim = htim;
     }
 }

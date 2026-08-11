@@ -59,4 +59,12 @@ float encoder_get_speed_rads(motor_id_t id, uint32_t delta_ms);
  */
 void encoder_reset_all(void);
 
+/**
+ * @brief Wire an encoder to a TIM handle.
+ *
+ * In production this is driven by a static pin-mapping table; for SIL
+ * testing it lets the test harness connect mock TIM handles at runtime.
+ */
+void encoder_set_tim(motor_id_t id, void *htim);
+
 #endif /* ENCODER_H */

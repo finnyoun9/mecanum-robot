@@ -19,6 +19,8 @@
  */
 
 #include "motor.h"
+#include "tim.h"
+#include "gpio.h"
 #include <stddef.h>
 
 /* --- Replace with actual HAL includes in real project --- */
@@ -51,15 +53,13 @@ static bool emergency_stopped = true;
 static void motor_set_pwm(motor_id_t id, uint16_t duty) {
     motor_pin_t *m = &motor_pins[id];
     if (!m->htim) return;
-    /* __HAL_TIM_SET_COMPARE(m->htim, m->tim_channel, duty); */
-    (void)duty; /* Suppress unused warning until HAL is wired */
+    __HAL_TIM_SET_COMPARE(m->htim, m->tim_channel, duty);
 }
 
 static void motor_set_dir(motor_id_t id, bool forward) {
     motor_pin_t *m = &motor_pins[id];
     if (!m->dir_port) return;
-    /* HAL_GPIO_WritePin(m->dir_port, m->dir_pin, forward ? GPIO_PIN_SET : GPIO_PIN_RESET); */
-    (void)forward;
+    HAL_GPIO_WritePin(m->dir_port, m->dir_pin, forward ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
 void motor_init(void) {
@@ -67,7 +67,7 @@ void motor_init(void) {
     for (int i = 0; i < MOTOR_COUNT; i++) {
         motor_pin_t *m = &motor_pins[i];
         if (m->htim) {
-            /* HAL_TIM_PWM_Start(m->htim, m->tim_channel); */
+            HAL_TIM_PWM_Start(m->htim, m->tim_channel);
         }
     }
     emergency_stopped = true;
@@ -97,4 +97,13 @@ void motor_resume(void) {
 
 bool motor_is_stopped(void) {
     return emergency_stopped;
+}
+
+void motor_set_tim(motor_id_t id, void *htim, void *dir_port,
+                   uint16_t dir_pin, uint32_t tim_ch) {
+    if (id >= MOTOR_COUNT) return;
+    motor_pins[id].htim        = (TIM_HandleTypeDef *)htim;
+    motor_pins[id].dir_port    = (GPIO_TypeDef *)dir_port;
+    motor_pins[id].dir_pin     = dir_pin;
+    motor_pins[id].tim_channel = tim_ch;
 }

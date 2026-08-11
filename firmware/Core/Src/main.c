@@ -12,6 +12,8 @@
  * Tune with uxTaskGetStackHighWaterMark().
  */
 
+#include <string.h>
+
 /* FreeRTOS */
 #include "FreeRTOS.h"
 #include "task.h"
@@ -27,9 +29,9 @@
 #include "nrf24l01.h"
 #include "remote_control.h"
 
-/* HAL (uncomment in real project) */
-/* #include "main.h" */
-/* #include "usart.h" */
+/* HAL */
+#include "main.h"
+#include "usart.h"
 
 /* --- Task handles --- */
 static TaskHandle_t hCtrlTask    = NULL;
@@ -44,13 +46,28 @@ static QueueHandle_t xCmdQueue;   /* Received commands → CtrlTask */
 /* --- UART TX buffer (written by robot_control, sent by CommTask) --- */
 static uint8_t  tx_buf[PROTO_MAX_FRAME];
 static uint8_t  tx_len = 0;
-static SemaphoreHandle_t xTxComplete;
+SemaphoreHandle_t xTxComplete;
 
 /* --- UART RX ring buffer --- */
 #define RX_RING_SIZE 256
 static uint8_t  rx_ring[RX_RING_SIZE];
 static volatile uint16_t rx_head = 0;
 static volatile uint16_t rx_tail = 0;
+
+/**
+ * @brief Feed bytes into the UART RX ring (for SIL / host testing).
+ *
+ * In production, DMA + IDLE-line ISR fills the ring.  In SIL, the test
+ * harness calls this directly to simulate received protocol frames.
+ */
+void sil_uart_rx_feed(const uint8_t *data, uint8_t len) {
+    for (uint8_t i = 0; i < len; i++) {
+        uint16_t next = (rx_head + 1) % RX_RING_SIZE;
+        if (next == rx_tail) break; /* ring full */
+        rx_ring[rx_head] = data[i];
+        rx_head = next;
+    }
+}
 
 /* ======================================================================== */
 /*  UART HAL Callbacks (called from ISR)                                     */
@@ -87,7 +104,7 @@ void comm_send_frame(const uint8_t *frame, uint8_t len) {
     if (xSemaphoreTake(xTxComplete, 0) == pdTRUE) {
         memcpy(tx_buf, frame, len);
         tx_len = len;
-        /* HAL_UART_Transmit_DMA(&huart1, tx_buf, tx_len); -- uncomment with HAL */
+        HAL_UART_Transmit_DMA(&huart1, tx_buf, tx_len);
         xSemaphoreGive(xTxComplete); /* Released in TX complete callback */
     }
 }
@@ -120,21 +137,24 @@ static bool rx_available(void) {
     return (rx_head != rx_tail);
 }
 
-static void CommTask(void *pvParameters) {
+void CommTask(void *pvParameters) {
     (void)pvParameters;
 
-    sync_state_t state = SYNC_WAIT_SYNC0;
-    uint8_t frame_buf[PROTO_MAX_FRAME];
-    uint8_t frame_idx = 0;
-    uint8_t exp_len   = 0;
+    static sync_state_t state = SYNC_WAIT_SYNC0;
+    static uint8_t frame_buf[PROTO_MAX_FRAME];
+    static uint8_t frame_idx = 0;
+    static uint8_t exp_len   = 0;
+    static bool initialized = false;
 
-    /* Start UART DMA reception */
-    /* HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_ring, RX_RING_SIZE); */
+    if (!initialized) {
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_ring, RX_RING_SIZE);
+        initialized = true;
+    }
 
+#ifndef SIL_BUILD
     for (;;) {
-        /* Wait for data notification from ISR, with 10ms timeout */
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
-
+#endif
         while (rx_available()) {
             uint8_t b = rx_byte();
 
@@ -192,42 +212,60 @@ static void CommTask(void *pvParameters) {
                 break;
             }
         }
+#ifndef SIL_BUILD
     }
+#endif
 }
 
 /* ======================================================================== */
 /*  CtrlTask: 100 Hz PID control loop                                        */
 /* ======================================================================== */
 
-static void CtrlTask(void *pvParameters) {
+void CtrlTask(void *pvParameters) {
     (void)pvParameters;
 
-    TickType_t xLastWakeTime = xTaskGetTickCount();
+    static TickType_t xLastWakeTime;
+    static bool initialized = false;
     const TickType_t xPeriod = pdMS_TO_TICKS(1000 / CTRL_LOOP_HZ);
 
+    if (!initialized) {
+        xLastWakeTime = xTaskGetTickCount();
+        initialized = true;
+    }
+
+#ifndef SIL_BUILD
     for (;;) {
+#endif
         robot_ctrl_loop();
+#ifndef SIL_BUILD
         vTaskDelayUntil(&xLastWakeTime, xPeriod);
     }
+#endif
 }
 
 /* ======================================================================== */
 /*  SensorTask: ToF + IMU at respective rates                                */
 /* ======================================================================== */
 
-static void SensorTask(void *pvParameters) {
+void SensorTask(void *pvParameters) {
     (void)pvParameters;
 
-    TickType_t xLastWakeTime = xTaskGetTickCount();
+    static TickType_t xLastWakeTime;
+    static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    static uint8_t tof_divider = 0;
+    static bool initialized = false;
     const float xImuDt = 0.010f; /* matches this task's 10ms period */
 
-    static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f}; /* AHRS state, persists across loop */
-    uint8_t tof_divider = 0;
+    if (!initialized) {
+        xLastWakeTime = xTaskGetTickCount();
+        mpu6050_init();
+        tof_init();
+        initialized = true;
+    }
 
-    mpu6050_init();
-    tof_init();
-
+#ifndef SIL_BUILD
     for (;;) {
+#endif
         /* --- IMU read + AHRS update (100 Hz = every 10ms) --- */
         int16_t accel_raw[3], gyro_raw[3];
         float   accel_mps2[3], gyro_rads[3];
@@ -247,23 +285,31 @@ static void SensorTask(void *pvParameters) {
             robot_update_tof(tof_mm, tof_status == TOF_TIMEOUT);
         }
 
+#ifndef SIL_BUILD
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(10));
     }
+#endif
 }
 
 /* ======================================================================== */
 /*  RemoteTask: poll NRF24L01 (20 Hz), apply wireless remote control         */
 /* ======================================================================== */
 
-static void RemoteTask(void *pvParameters) {
+void RemoteTask(void *pvParameters) {
     (void)pvParameters;
 
-    remote_state_t rstate;
-    remote_init(&rstate);
+    static remote_state_t rstate;
+    static bool initialized = false;
 
-    nrf24l01_init();
+    if (!initialized) {
+        remote_init(&rstate);
+        nrf24l01_init();
+        initialized = true;
+    }
 
+#ifndef SIL_BUILD
     for (;;) {
+#endif
         if (nrf24l01_receive()) {
             remote_result_t res;
             if (remote_process(nrf24l01_rx_packet(), &rstate, &res)) {
@@ -279,18 +325,22 @@ static void RemoteTask(void *pvParameters) {
                 }
             }
         }
+#ifndef SIL_BUILD
         vTaskDelay(pdMS_TO_TICKS(50));
     }
+#endif
 }
 
 /* ======================================================================== */
 /*  MonitorTask: watchdog + debug output (1 Hz)                              */
 /* ======================================================================== */
 
-static void MonitorTask(void *pvParameters) {
+void MonitorTask(void *pvParameters) {
     (void)pvParameters;
 
+#ifndef SIL_BUILD
     for (;;) {
+#endif
         /* Print stack high watermarks for tuning */
         /*
         printf("Ctrl:    %lu\n", uxTaskGetStackHighWaterMark(hCtrlTask));
@@ -302,15 +352,17 @@ static void MonitorTask(void *pvParameters) {
         /* Blink heartbeat LED */
         /* HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin); */
 
+#ifndef SIL_BUILD
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+#endif
 }
 
 /* ======================================================================== */
 /*  main()                                                                    */
 /* ======================================================================== */
 
-int main(void) {
+int firmware_arch_main(void) {
     /* --- HAL init (CubeMX-generated) --- */
     /* HAL_Init(); */
     /* SystemClock_Config(); */
