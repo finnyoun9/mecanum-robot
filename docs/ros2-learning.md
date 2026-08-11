@@ -181,25 +181,26 @@ Mac (XQuartz)  ←── SSH -X ──→  树莓派 (mcr-ros2:jazzy-gui)
   显示 RViz 窗口                    跑 RViz2 + 所有节点
 ```
 
-**安装步骤**：
+**方案 A：SSH X11 Forwarding（不可行）**
+
+OGRE 3D 引擎无法通过远程 X11 创建 GLX 渲染窗口，RViz2 启动崩溃。
+
+**方案 B：Xvfb + VNC（当前方案 ✅）**
+
+容器内虚拟显示器渲染，VNC 投射到任意电脑。
 
 ```bash
-# 1. Mac 安装 XQuartz
-curl -L -o /tmp/XQuartz.pkg https://github.com/XQuartz/XQuartz/releases/download/XQuartz-2.8.5/XQuartz-2.8.5.pkg
-sudo installer -pkg /tmp/XQuartz.pkg -target /
+# 1. (一次性) 容器内安装 VNC server
+ssh pi@<IP> 'docker exec mcr_ros2 apt-get update && docker exec mcr_ros2 apt-get install -y x11vnc'
 
-# 2. 注销并重新登录（必须！）
+# 2. 启动虚拟显示器 + RViz2 + VNC
+ssh pi@<IP> 'docker exec -d mcr_ros2 Xvfb :99 -screen 0 1280x800x24 +extension GLX'
+ssh pi@<IP> 'docker exec -d -e DISPLAY=:99 -e LIBGL_ALWAYS_SOFTWARE=1 mcr_ros2 bash -c "source /opt/ros/jazzy/setup.bash && rviz2 -d /ros2_ws/src/mcr_navigation/config/nav2_default_view.rviz"'
+ssh pi@<IP> 'docker exec -d mcr_ros2 x11vnc -display :99 -forever -nopw -rfbport 5900'
 
-# 3. 重新登录后，启动 XQuartz 并允许 X11 转发
-open /Applications/Utilities/XQuartz.app
-xhost + localhost
-
-# 4. SSH 到树莓派（-X 开启 X11 转发）
-ssh -X pi@<树莓派IP>
-
-# 5. 进入 Docker 容器，启动 RViz
-docker exec -it mcr_ros2 bash
-rviz2 -d /ros2_ws/src/mcr_navigation/config/nav2_default_view.rviz
+# 3. VNC 客户端连接 192.168.0.116:5900
+#    Mac: open vnc://192.168.0.116:5900
+#    Win: RealVNC / TightVNC → 192.168.0.116:5900
 ```
 
 ---
