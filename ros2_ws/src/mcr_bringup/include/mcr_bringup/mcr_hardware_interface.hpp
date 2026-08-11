@@ -98,6 +98,7 @@ private:
     /* IMU */
     double imu_orientation[4];  /* quaternion w,x,y,z */
     double imu_angular_vel[3]; /* rad/s */
+    double imu_linear_accel[3]; /* m/s² (zeros until firmware streams accel) */
 
     /* ToF */
     double tof_range;           /* metres */

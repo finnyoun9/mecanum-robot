@@ -14,6 +14,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 
@@ -29,10 +30,15 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
     serial_dev   = LaunchConfiguration('serial_device', default='/dev/ttyAMA10')
 
-    robot_description_content = Command([
-        FindExecutable(name='xacro'), ' ', urdf_xacro,
-        ' serial_device:=', serial_dev
-    ])
+    # Jazzy requires an explicit ParameterValue for substitution-based string
+    # params (robot_description is URDF, which is not valid YAML).
+    robot_description_content = ParameterValue(
+        Command([
+            FindExecutable(name='xacro'), ' ', urdf_xacro,
+            ' serial_device:=', serial_dev
+        ]),
+        value_type=str,
+    )
 
     # --- Nodes ---
 

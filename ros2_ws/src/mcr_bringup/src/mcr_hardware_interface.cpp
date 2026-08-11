@@ -117,6 +117,12 @@ MCRHardwareInterface::export_state_interfaces()
     &sensors_.imu_angular_vel[1]);
   ifaces.emplace_back("imu_sensor", "angular_velocity.z",
     &sensors_.imu_angular_vel[2]);
+  ifaces.emplace_back("imu_sensor", "linear_acceleration.x",
+    &sensors_.imu_linear_accel[0]);
+  ifaces.emplace_back("imu_sensor", "linear_acceleration.y",
+    &sensors_.imu_linear_accel[1]);
+  ifaces.emplace_back("imu_sensor", "linear_acceleration.z",
+    &sensors_.imu_linear_accel[2]);
 
   /* ToF sensor */
   ifaces.emplace_back("tof_sensor", "range", &sensors_.tof_range);
