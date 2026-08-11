@@ -39,6 +39,10 @@
   <xacro:property name="pi_offset_z"    value="0.04"/>    <!-- Pi board above chassis -->
   <xacro:property name="lidar_offset_z" value="0.10"/>    <!-- LiDAR height -->
 
+  <!-- Serial device for the STM32 link. Overridable from the command line:
+       xacro mcr.urdf.xacro serial_device:=/dev/ttyAMA10   (or a pty for the sim) -->
+  <xacro:arg name="serial_device" default="/dev/ttyAMA10"/>
+
   <!-- ============================================================ -->
   <!-- Materials                                                     -->
   <!-- ============================================================ -->
@@ -179,7 +183,7 @@
   <ros2_control name="MCRSystem" type="system">
     <hardware>
       <plugin>mcr_bringup/MCRHardwareInterface</plugin>
-      <param name="serial_device">/dev/ttyAMA0</param>
+      <param name="serial_device">${arg('serial_device')}</param>
       <param name="serial_baud">921600</param>
       <param name="wheel_radius">${wheel_radius}</param>
       <param name="lx">${lx}</param>

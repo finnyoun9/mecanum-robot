@@ -10,9 +10,8 @@ Launches:
 
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.event_handlers import OnProcessExit
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -25,13 +24,15 @@ def generate_launch_description():
     pkg_bringup     = get_package_share_directory('mcr_bringup')
 
     urdf_xacro = os.path.join(pkg_description, 'urdf', 'mcr.urdf.xacro')
-    robot_description_content = Command([
-        FindExecutable(name='xacro'), ' ', urdf_xacro
-    ])
 
     # --- Launch args ---
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-    serial_dev   = LaunchConfiguration('serial_device', default='/dev/ttyAMA0')
+    serial_dev   = LaunchConfiguration('serial_device', default='/dev/ttyAMA10')
+
+    robot_description_content = Command([
+        FindExecutable(name='xacro'), ' ', urdf_xacro,
+        ' serial_device:=', serial_dev
+    ])
 
     # --- Nodes ---
 
@@ -65,18 +66,11 @@ def generate_launch_description():
         ],
     )
 
-    # Spawn controllers after controller_manager is up
-    def spawn_controllers(event, controller_names):
-        """Delay-spawn controllers after CM is ready."""
-        from launch_ros.actions import LoadJointStateBroadcaster, LoadController
-        actions = []
-        for name in controller_names:
-            actions.append(LoadController(
-                controller_name=name,
-            ))
-        return actions
-
-    # Start the controllers sequentially
+    # Start the controllers. The spawner executables block until the
+    # controller_manager service is available, then spawn and exit — so they
+    # can run in parallel instead of being chained on process exit (the old
+    # OnProcessExit(controller_manager) chain never fired because
+    # ros2_control_node is a persistent process that never exits).
     joint_state_spawner = Node(
         package='controller_manager',
         executable='spawner',
@@ -99,9 +93,9 @@ def generate_launch_description():
     )
 
     # robot_localization EKF — fuses wheel odom + IMU into a corrected
-    # odom -> base_footprint TF and /odometry/filtered topic. Started only
-    # after both the mecanum drive controller and IMU broadcaster are up,
-    # since it depends on their published topics.
+    # odom -> base_footprint TF and /odometry/filtered topic. Started at the
+    # same time as the spawners; it simply waits for its input topics to
+    # appear before publishing anything.
     ekf_node = Node(
         package='robot_localization',
         executable='ekf_node',
@@ -129,40 +123,16 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('serial_device', default_value='/dev/ttyAMA0'),
+        DeclareLaunchArgument('serial_device', default_value='/dev/ttyAMA10'),
 
         robot_state_pub,
         controller_manager,
 
-        # Register event handler to spawn controllers after CM starts
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=controller_manager,
-                on_exit=[joint_state_spawner],
-            )
-        ),
+        # Spawners run in parallel; each waits for controller_manager itself.
+        joint_state_spawner,
+        mecanum_controller_spawner,
+        imu_spawner,
 
-        # Spawn mecanum controller after joint state broadcaster
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=joint_state_spawner,
-                on_exit=[mecanum_controller_spawner],
-            )
-        ),
-
-        # Spawn IMU broadcaster after mecanum controller
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=mecanum_controller_spawner,
-                on_exit=[imu_spawner],
-            )
-        ),
-
-        # Start the EKF once wheel odom + IMU are both being published
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=imu_spawner,
-                on_exit=[ekf_node],
-            )
-        ),
+        # EKF waits for its inputs, so it can start alongside the spawners.
+        ekf_node,
     ])
