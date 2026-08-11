@@ -159,6 +159,51 @@ MacBook (调试)                      树莓派 5 (机器人本体)
 
 ---
 
+### 17-20. 工具链：URDF / Gazebo / RViz / RQT
+
+四个工具在本项目中的使用情况：
+
+| 工具 | 用途 | 项目状态 |
+|------|------|----------|
+| **URDF** | 机器人建模——物理尺寸、坐标系树、质量惯量、硬件接口定义 | ✅ 已完整使用。`mcr_description/urdf/mcr.urdf.xacro` 定义了 4 轮 + 5 传感器的完整模型 |
+| **RViz** | 3D 可视化——实时显示机器人位姿、激光点云、导航路径、TF 坐标系 | ✅ 已集成。`navigation.launch.py` 自动启动，配置文件在 `mcr_navigation/config/nav2_default_view.rviz` |
+| **Gazebo** | 物理仿真——虚拟测试场，先仿真验证算法再上真机 | ⚠️ 之前在其他项目跑通过完整链路（URDF + Gazebo + SLAM + Nav2），本项目暂未加配置 |
+| **RQT** | 调试工具箱——`rqt_graph` 看拓扑、`rqt_plot` 画曲线、`rqt_tf_tree` 看 TF 树 | ❌ 运行时可随时用，不需要预先配置 |
+
+**四者关系**：URDF 是图纸 → Gazebo 是虚拟测试场 → RViz 是实时监控 → RQT 是调试工具箱。
+
+### Mac 远程调试 RViz2
+
+macOS 没有原生 ROS2，通过 **SSH + X11 Forwarding** 把树莓派的 RViz 画面投射到 Mac：
+
+```
+Mac (XQuartz)  ←── SSH -X ──→  树莓派 (mcr-ros2:jazzy-gui)
+  显示 RViz 窗口                    跑 RViz2 + 所有节点
+```
+
+**安装步骤**：
+
+```bash
+# 1. Mac 安装 XQuartz
+curl -L -o /tmp/XQuartz.pkg https://github.com/XQuartz/XQuartz/releases/download/XQuartz-2.8.5/XQuartz-2.8.5.pkg
+sudo installer -pkg /tmp/XQuartz.pkg -target /
+
+# 2. 注销并重新登录（必须！）
+
+# 3. 重新登录后，启动 XQuartz 并允许 X11 转发
+open /Applications/Utilities/XQuartz.app
+xhost + localhost
+
+# 4. SSH 到树莓派（-X 开启 X11 转发）
+ssh -X pi@<树莓派IP>
+
+# 5. 进入 Docker 容器，启动 RViz
+docker exec -it mcr_ros2 bash
+rviz2 -d /ros2_ws/src/mcr_navigation/config/nav2_default_view.rviz
+```
+
+---
+
 ## 学习记录
 
 ### 环境信息
