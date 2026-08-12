@@ -61,6 +61,8 @@ experiments/        # 配置、原始数据、波形和结论
 
 - [x] 项目定位与求职方向分析
 - [x] 确定 LeArm 散件 + STM32 核心模组
+- [x] host protocol v1 设计（radians、复用底盘 framing、arm CMD 0x40+）
+- [x] arm 控制器 SIL 骨架（mock servo_bus，FAULT 状态机 CI 场景）
 - [ ] 向卖家确认 SKU、舵机反馈项和源码范围
 - [ ] 到货清点与机械干装
 - [ ] 单舵机 bring-up

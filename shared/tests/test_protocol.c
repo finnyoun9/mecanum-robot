@@ -242,6 +242,80 @@ void test_sequence_numbers(void) {
     printf("PASS: Sequence number preserved for all values 0-254\n");
 }
 
+/* ===== Arm protocol tests ===== */
+
+void test_encode_decode_arm_set_pos(void) {
+    uint8_t frame[PROTO_MAX_FRAME];
+    uint8_t frame_len = 0;
+    arm_set_pos_t sp = { { 0.5f, -0.3f, 1.2f, 0.0f, -1.4f, 0.05f } };
+
+    int ret = proto_encode(CMD_ARM_SET_POS, (const uint8_t *)&sp, sizeof(sp),
+                           frame, &frame_len, 7);
+    assert(ret == sizeof(sp));
+    assert(frame_len == 7 + sizeof(sp));
+
+    uint8_t cmd_out, payload_out[PROTO_MAX_PAYLOAD], pay_len_out, seq_out;
+    ret = proto_decode(frame, frame_len, &cmd_out, payload_out, &pay_len_out, &seq_out);
+    assert(ret >= 0);
+    assert(cmd_out == CMD_ARM_SET_POS);
+    assert(pay_len_out == sizeof(sp));
+    assert(seq_out == 7);
+
+    arm_set_pos_t *dec = (arm_set_pos_t *)payload_out;
+    for (uint8_t i = 0; i < ARM_JOINT_COUNT; i++) {
+        assert(fabsf(dec->joint[i] - sp.joint[i]) < 1e-6f);
+    }
+    printf("PASS: Encode/decode round-trip for CMD_ARM_SET_POS (6 floats, radians)\n");
+}
+
+void test_encode_decode_arm_torque(void) {
+    uint8_t frame[PROTO_MAX_FRAME];
+    uint8_t frame_len = 0;
+    arm_torque_cmd_t tc = { .mask = 0x3F };
+
+    int ret = proto_encode(CMD_ARM_TORQUE, (const uint8_t *)&tc, sizeof(tc),
+                           frame, &frame_len, 0);
+    assert(ret == sizeof(tc));
+
+    uint8_t cmd_out, payload_out[PROTO_MAX_PAYLOAD], pay_len_out, seq_out;
+    ret = proto_decode(frame, frame_len, &cmd_out, payload_out, &pay_len_out, &seq_out);
+    assert(ret >= 0);
+    assert(cmd_out == CMD_ARM_TORQUE);
+    assert(((arm_torque_cmd_t *)payload_out)->mask == 0x3F);
+    printf("PASS: Encode/decode round-trip for CMD_ARM_TORQUE\n");
+}
+
+void test_encode_decode_arm_state(void) {
+    uint8_t frame[PROTO_MAX_FRAME];
+    uint8_t frame_len = 0;
+    arm_state_t st;
+    memset(&st, 0, sizeof(st));
+    st.joint_pos[2] = 1.0f;
+    st.joint_speed[1] = -0.5f;
+    st.torque_mask = 0x3F;
+    st.fault_flags = ARM_FAULT_SOFT_LIMIT;
+    st.temperature_c = 42;
+
+    int ret = proto_encode(CMD_ARM_STATE, (const uint8_t *)&st, sizeof(st),
+                           frame, &frame_len, 3);
+    assert(ret == sizeof(st));
+    assert(sizeof(st) <= PROTO_MAX_PAYLOAD);
+    assert(frame_len == 7 + sizeof(st));
+
+    uint8_t cmd_out, payload_out[PROTO_MAX_PAYLOAD], pay_len_out, seq_out;
+    ret = proto_decode(frame, frame_len, &cmd_out, payload_out, &pay_len_out, &seq_out);
+    assert(ret >= 0);
+    assert(cmd_out == CMD_ARM_STATE);
+
+    arm_state_t *dec = (arm_state_t *)payload_out;
+    assert(fabsf(dec->joint_pos[2] - 1.0f) < 1e-6f);
+    assert(fabsf(dec->joint_speed[1] + 0.5f) < 1e-6f);
+    assert(dec->torque_mask == 0x3F);
+    assert(dec->fault_flags == ARM_FAULT_SOFT_LIMIT);
+    assert(dec->temperature_c == 42);
+    printf("PASS: Encode/decode round-trip for CMD_ARM_STATE (52-byte feedback)\n");
+}
+
 /* ===== Main ===== */
 
 int main(void) {
@@ -255,6 +329,11 @@ int main(void) {
     /* Encode/decode tests */
     test_encode_decode_vel_ctrl();
     test_encode_decode_odom_feedback();
+
+    /* Arm protocol tests */
+    test_encode_decode_arm_set_pos();
+    test_encode_decode_arm_torque();
+    test_encode_decode_arm_state();
 
     /* Corruption tests */
     test_corruption_detection();

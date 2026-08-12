@@ -1,5 +1,33 @@
 # Decision log
 
+## 2026-08-13 — Host protocol v1 + arm controller SIL skeleton
+
+### Context
+
+机械臂尚未到货，先把与硬件无关的主机协议和控制器核心确定下来，避免后续反复改线格式。
+
+### Decision
+
+- host protocol 沿用底盘 framing（`SYNC0/SYNC1 + LEN + SEQ + CMD + CRC16-MODBUS`），机械臂命令分配到 `0x40-0x4F`（Pi→arm MCU）/ `0x50-0x5F`（arm MCU→Pi），见 `shared/protocol.h`。
+- 关节位置一律使用 radians，与 ros2_control/MoveIt2 一致；到舵机厂商单位（0-1000 或 0.1°）的换算放在 arm STM32 内完成。
+- 控制器骨架落在 `firmware/arm_controller/`，结构与架构文档的 `app/`（arm_control、safety_monitor）+ `drivers/`（host_protocol、servo_bus）+ SIL 一致。
+- 复用底座固件的 SIL 方法论：mock servo_bus，CI 里确定性跑 FAULT 状态机场景（`firmware-tests.yml` 新增 `sil_arm_controller --ci`）。
+- 故障统一策略（骨架版）：**任何 FAULT 入口都断扭矩**，主机在 `CMD_ARM_RESET` 后需重新 `CMD_ARM_TORQUE` 上电。
+
+### Rationale
+
+- 一种 framing、一套 CRC 和单测，Pi 侧解析器与 SIL 基建全部复用，系统只有一个协议模型。
+- radians 让 Pi 侧与 MoveIt2 零转换，MCU 负责厂商协议隔离。
+- 在硬件到货前就能在 CI 里确定性验证限位、急停、超时、总线故障与恢复。
+
+### Risks / Open
+
+- 厂商舵机协议未确认，`servo_bus` 只有接口和 mock；真实驱动待 Stage 2 抓帧后补。
+- `ARM_FAULT_OVER_TEMP / UNDER_VOLT / OVERLOAD / WATCHDOG` 已入协议，但骨架未接线。
+- `PROTO_FRAME_OVERHEAD` 宏值为 6，实际帧开销是 7（CRC 占 2 字节）——测试沿用字面量 7，宏本身是历史遗留，未改动。
+
+---
+
 ## 2026-08-12 — Select LeArm loose-parts kit with STM32 controller
 
 ### Context

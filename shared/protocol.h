@@ -81,6 +81,63 @@ typedef struct __attribute__((packed)) {
     uint8_t reserved;
 } error_report_t;
 
+/* ========================================================================
+ * Manipulator arm commands (LeArm mobile manipulator)
+ *
+ * Same framing + CRC16 as the base protocol; joint positions are radians
+ * throughout (matches ros2_control/MoveIt2). Conversion to vendor servo
+ * units happens inside the arm STM32 controller. Joint index 5 is the
+ * gripper.
+ *
+ * Range: 0x40-0x4F Pi → arm MCU, 0x50-0x5F arm MCU → Pi.
+ * ====================================================================== */
+
+#define ARM_JOINT_COUNT 6
+
+/* --- Command IDs (Pi → arm STM32) --- */
+#define CMD_ARM_SET_POS   0x40  /* Absolute joint targets (radians) */
+#define CMD_ARM_GET_STATE 0x41  /* Request a CMD_ARM_STATE report */
+#define CMD_ARM_TORQUE    0x42  /* Energize/de-energize joints by bitmask */
+#define CMD_ARM_ESTOP     0x43  /* Immediate torque-off + latch FAULT */
+#define CMD_ARM_RESET     0x44  /* Clear latched FAULT, return to IDLE */
+
+/* --- Command IDs (arm STM32 → Pi) --- */
+#define CMD_ARM_STATE     0x50  /* Joint positions/speeds + fault flags */
+
+/* --- Arm fault flags (bitmask, latched in FAULT state) --- */
+#define ARM_FAULT_NONE          0x00
+#define ARM_FAULT_HOST_TIMEOUT  0x01
+#define ARM_FAULT_SERVO_COMM    0x02
+#define ARM_FAULT_SOFT_LIMIT    0x04
+#define ARM_FAULT_OVER_TEMP     0x08
+#define ARM_FAULT_UNDER_VOLT    0x10
+#define ARM_FAULT_OVERLOAD      0x20
+#define ARM_FAULT_ESTOP         0x40
+#define ARM_FAULT_WATCHDOG      0x80
+
+/* --- Payload structures --- */
+
+/* CMD_ARM_SET_POS: 6× float absolute joint targets (radians).
+ * [5] = gripper. Motion interpolation/smoothing is the MCU's job. */
+typedef struct __attribute__((packed)) {
+    float joint[ARM_JOINT_COUNT];
+} arm_set_pos_t;  /* 24 bytes */
+
+/* CMD_ARM_TORQUE: bitmask of joints to energize. 0 = all torque off. */
+typedef struct __attribute__((packed)) {
+    uint8_t mask;  /* bit0..5 → joint0..5 */
+} arm_torque_cmd_t;  /* 1 byte */
+
+/* CMD_ARM_STATE: full feedback report from the arm MCU. */
+typedef struct __attribute__((packed)) {
+    float    joint_pos[ARM_JOINT_COUNT];   /* radians */
+    float    joint_speed[ARM_JOINT_COUNT]; /* rad/s */
+    uint8_t  torque_mask;                  /* joints currently energized */
+    uint8_t  fault_flags;                  /* ARM_FAULT_* bitmask */
+    int8_t   temperature_c;                /* controller temp, ±127 °C */
+    uint8_t  reserved;
+} arm_state_t;  /* 52 bytes */
+
 /* --- CRC16 (MODBUS) --- */
 uint16_t proto_crc16(const uint8_t *data, uint8_t len);
 

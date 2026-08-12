@@ -45,3 +45,11 @@ jobs:
         cmake .. -DCMAKE_BUILD_TYPE=Release
         make -j$(nproc)
         ./sil_firmware --ci
+
+    - name: Arm controller SIL build + test
+      run: |
+        mkdir -p firmware/arm_controller/build
+        cd firmware/arm_controller/build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        make -j$(nproc)
+        ./sil_arm_controller --ci
