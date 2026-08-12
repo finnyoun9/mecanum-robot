@@ -3,9 +3,20 @@
 ## Multi-tier RTOS + ROS2 Autonomous Mobile Robot with Mecanum Wheels / 基于 FreeRTOS + ROS2 的多层架构自主移动机器人
 
 A full-stack embedded robotics project targeting **MCU+RTOS** job roles.
-Covers the complete stack: bare-metal drivers → real-time OS → communication protocols → ROS2 → SLAM/navigation → computer vision → 3D perception.
+Covers the complete stack: bare-metal drivers → real-time OS → communication protocols → ROS2 → SLAM/navigation → computer vision → mobile manipulation.
 
-面向嵌入式 **MCU+RTOS** 岗位的全栈机器人项目。覆盖完整技术栈:裸机驱动 → 实时操作系统 → 通信协议 → ROS2 → SLAM/导航 → 计算机视觉 → 3D 感知。
+面向嵌入式 **MCU+RTOS** 岗位的全栈机器人项目。覆盖完整技术栈:裸机驱动 → 实时操作系统 → 通信协议 → ROS2 → SLAM/导航 → 计算机视觉 → 移动操作。
+
+## Mobile Manipulator Extension / 移动操作扩展
+
+The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**. The arm is developed as an independent subsystem under [`manipulator/`](manipulator/) and will be integrated with the existing Raspberry Pi 5 + STM32 mecanum base through ROS 2.
+
+项目新增 **LeArm 六自由度机械臂 + STM32 核心模组**。机械臂作为 [`manipulator/`](manipulator/) 独立子系统开发，后续通过 ROS 2 与现有 Raspberry Pi 5 + STM32 麦克纳姆底盘联动。
+
+- 装配散件并记录结构、回差、关节限位和线束设计
+- 实现总线舵机通信、UART/DMA、FreeRTOS 调度、看门狗和故障处理
+- 接入自定义 `ros2_control` hardware interface 和 MoveIt 2
+- 完成导航、AprilTag 定位、抓取、运输和放置演示
 
 ---
 
