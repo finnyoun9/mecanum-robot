@@ -1,0 +1,9 @@
+build/
+install/
+log/
+.venv/
+__pycache__/
+*.bag
+*.db3
+datasets/
+checkpoints/
