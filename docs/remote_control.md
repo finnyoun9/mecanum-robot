@@ -1,5 +1,7 @@
 # 无线遥控 (NRF24L01) / Wireless Remote Control
 
+> 当前证据边界：机器人端驱动、摇杆映射和单元测试已完成，NRF24L01 实物收发及电机联动尚未验收。
+
 让麦克纳姆轮机器人支持 **2.4GHz 无线手柄遥控** —— 全向运动控制。遥控器端复用江协科技(江科大)平衡车教程的遥控器硬件与固件;机器人端(STM32)新增 NRF24L01 接收驱动、摇杆→全向运动解析和麦克纳姆逆运动学。
 
 Adds **2.4 GHz wireless hand-held remote control** with omnidirectional motion. The controller side reuses the 江协科技 (Jiangxie) balance-car remote hardware + firmware; the robot side (STM32) gains an NRF24L01 receiver driver, joystick→omnidirectional mapping, and mecanum inverse kinematics.

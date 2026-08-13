@@ -2,6 +2,8 @@
 
 本项目可作为嵌入式 MCU+RTOS 岗位简历的核心项目经历。以下是各模块的技术含金量分析和简历写法建议。
 
+> 证据边界（2026-08-13）：共享协议、运动学、ROS 2 构建、SIL 和 CI 已验证；真实 STM32 引脚映射、电机/编码器、DMA/IDLE、NRF24L01、IMU/ToF 和底盘运动仍待上板。下面涉及真机的句子，只有完成 [真机闭环路线](hardware-closed-loop-roadmap.md) 后才能直接放进简历。
+
 ---
 
 ## 一、SIL 软件在环测试框架 ⭐⭐⭐ (最大亮点)
@@ -12,14 +14,14 @@
 - 设计了一套 Mock HAL 层，用**包含路径优先级**（`-I` 顺序）让 mock 头文件"影子化"真实 STM32 HAL 头文件，固件源码一行不改即可在 Linux 上编译
 - Mock FreeRTOS 用轮询调度器模拟多任务：每个 tick 调用每个任务一次，`#ifndef SIL_BUILD` 条件编译移除 `for(;;)` 和阻塞调用
 - 编码器物理模型：PWM 占空比 → 车轮转速 → 正交编码器边沿积分（含浮点累加器解决小占空比截断问题）
-- 在 mock HAL 内闭环验证了：串口协议帧收发 → CommTask 解析 → `robot_handle_command()` → CtrlTask PID 运算 → PWM 输出 → 编码器累积 → 里程计帧发布
+- 在 mock HAL 内验证了控制数据链：串口协议帧收发 → CommTask 解析 → `robot_handle_command()` → CtrlTask PID 运算 → PWM 输出 → 编码器累积 → 里程计帧发布
 - CI 集成：GitHub Actions 自动编译 + 运行 SIL 测试
 
 **简历写法**：
-> 为 STM32 FreeRTOS 固件搭建 **SIL（软件在环）测试框架**：设计 Mock HAL 层（GPIO/TIM/UART/I2C）以包含路径优先级影子化真实外设头文件，固件源码零修改即可编译为 Linux 原生可执行文件；实现编码器物理模型（PWM→转速→正交边沿）和 FreeRTOS 轮询调度模拟器；在 CI 中自动验证 PID 闭环（PWM 输出 / 编码器累积 / 里程计协议帧）。
+> 为 STM32 FreeRTOS 固件搭建 **SIL（软件在环）测试框架**：设计 Mock HAL 层（GPIO/TIM/UART/I2C）以包含路径优先级影子化真实外设头文件，固件源码零修改即可编译为 Linux 原生可执行文件；实现简化编码器模型和 FreeRTOS 轮询调度模拟器；在 CI 中自动验证命令解析、PWM 输出、编码器累积和里程计协议帧。
 
 **英文版**：
-> Built a **Software-in-the-Loop (SIL) test framework** for STM32 FreeRTOS firmware: designed a Mock HAL layer (GPIO/TIM/UART/I2C) that shadows real peripheral headers via include path ordering, allowing firmware to compile as a native Linux binary with zero source changes; implemented encoder physics model (PWM→speed→quadrature edges) and FreeRTOS round-robin scheduler simulator; automated PID closed-loop verification (PWM output / encoder accumulation / odometry frames) in CI.
+> Built a **Software-in-the-Loop (SIL) test framework** for STM32 FreeRTOS firmware: designed a Mock HAL layer (GPIO/TIM/UART/I2C) that shadows real peripheral headers via include path ordering, allowing firmware to compile as a native Linux binary with zero source changes; implemented a simplified encoder model and FreeRTOS scheduler simulator; automated verification of command parsing, PWM output, encoder accumulation and odometry frames in CI.
 
 **面试可能追问**：
 - 为什么用 include 路径而非条件编译？→ 答：保持固件源码干净，mock 层完全独立
@@ -66,7 +68,7 @@
 - ToF 紧急避障：<10cm 自动刹车
 
 **简历写法**：
-> 基于 FreeRTOS 实现 **5 任务实时调度系统**：100Hz PID 控制任务（优先级 4）+ DMA 串口通信任务（优先级 3）+ 传感器融合任务（100Hz IMU + 20Hz ToF）+ 无线遥控任务 + 栈监控任务；任务间通过队列和信号量通信。
+> 设计 FreeRTOS **5 任务实时调度架构**：100Hz PID 控制任务（优先级 4）+ 通信任务（优先级 3）+ 传感器任务 + 无线遥控任务 + 栈监控任务；当前已通过 SIL 验证控制逻辑，真机调度与外设时序待测。
 
 ---
 
@@ -75,14 +77,14 @@
 **技术含金量**：经典控制理论在嵌入式上的实现，含抗积分饱和。
 
 **你做了什么**：
-- 4 路独立 PID（增量式/位置式），100 Hz 控制频率
+- 4 路位置式 PID 代码，100 Hz 控制频率；真实速度环优先使用 PI
 - 抗积分饱和（integral windup clamping），积分上限 300
 - 默认参数 kP=2.5, kI=0.8, kD=0.05（可在 SIL 中调参验证）
 - 支持运行时通过串口 `CMD_PID_TUNE` 调整增益
 - 编码器速度反馈：正交编码器 → 边沿计数 → 弧度/秒转换
 
 **简历写法**：
-> 实现 **4 路独立 PID 速度闭环控制**（100 Hz），含抗积分饱和和运行时增益调整；通过正交编码器提供速度反馈。
+> 实现 **4 路 PID 速度闭环控制框架**（100 Hz），含抗积分饱和和运行时增益调整；已通过编码器模型完成 SIL 验证，真实编码器参数和阶跃响应待测。
 
 ---
 
@@ -96,7 +98,7 @@
 - 每次 push 自动验证固件不退化
 
 **简历写法**：
-> 搭建 GitHub Actions **CI 流水线**，每次提交自动运行协议/PID/运动学单元测试 + **SIL 固件软件在环闭环测试**，确保固件变更不引入回归。
+> 搭建 GitHub Actions **CI 流水线**，每次提交自动运行协议/PID/运动学单元测试 + **SIL 固件控制链测试**，确保固件变更不引入回归。
 
 ---
 
@@ -109,7 +111,7 @@
 | NRF24L01 无线通信 | 2.4GHz SPI 驱动，位脉冲模拟 | 面 IoT/无线通信岗位 |
 | ros2_control 硬件接口 | 自定义 SystemInterface 插件 | 面 ROS2 岗位 |
 | 编码器驱动 | STM32 TIM 正交编码器模式，16→32 位扩展 | 面电机控制岗位 |
-| UART DMA 收发 | IDLE 中断 + 双缓冲，零 CPU 占用 | 面底层驱动岗位 |
+| UART DMA 收发 | IDLE 接收代码路径已建立，待 CubeMX 与真机波形验证 | 面底层驱动岗位 |
 
 ---
 
@@ -118,7 +120,7 @@
 ### 精简版（3-4 行，适合空间有限的简历）
 
 > **麦克纳姆轮全向移动机器人** | STM32 + FreeRTOS + ROS2 | 独立开发
-> - 搭建 **SIL 软件在环测试框架**：Mock HAL 层使固件以 Linux 原生可执行文件编译，在 CI 中自动验证 PID 闭环
+> - 搭建 **SIL 软件在环测试框架**：Mock HAL 层使固件以 Linux 原生可执行文件编译，在 CI 中自动验证命令、PWM、编码器与里程计数据链
 > - 实现 **FreeRTOS 5 任务实时调度**（100Hz PID 控制 + DMA 串口通信 + IMU/ToF 传感器融合 + 无线遥控）
 > - 设计 **自定义二进制通信协议**（双字节帧同步 + CRC-16/MODBUS + 状态机解析器），跨平台 C/C++ 共享
 > - 构建 **GitHub Actions CI 流水线**，每次提交自动运行单元测试 + SIL 闭环验证
@@ -126,10 +128,10 @@
 ### 详细版（5-6 行，适合项目经历专页）
 
 > **麦克纳姆轮全向移动机器人 — 嵌入式实时控制系统**
-> - 为 STM32 FreeRTOS 固件搭建 **SIL 软件在环测试框架**：设计 Mock HAL 层（GPIO/TIM/UART/I2C）以包含路径优先级影子化真实外设头文件，固件源码零修改编译为 Linux 原生可执行文件；实现编码器物理模型（PWM→转速→边沿）和 FreeRTOS 轮询调度模拟器；CI 中自动验证 PID 闭环（PWM 输出/编码器累积/里程计协议帧）
+> - 为 STM32 FreeRTOS 固件搭建 **SIL 软件在环测试框架**：设计 Mock HAL 层（GPIO/TIM/UART/I2C），使固件编译为 Linux 原生可执行文件；实现简化编码器模型和 FreeRTOS 调度模拟器；CI 中自动验证命令解析、PWM 输出、编码器累积与里程计协议帧
 > - 实现 **5 任务 FreeRTOS 实时调度**：CtrlTask（100Hz PID + 看门狗）> CommTask（DMA 串口 + 协议解析）> SensorTask（IMU + ToF）> RemoteTask（NRF24L01 无线）> MonitorTask（栈监控）
 > - 设计 **自定义二进制串口协议**：`[SYNC0 SYNC1 LEN SEQ CMD PAYLOAD CRC16]`，CRC-16/MODBUS 校验，5 状态帧同步状态机抗数据错位，协议库跨 STM32（C）和 Raspberry Pi（C++）共享
-> - 4 路独立 PID 速度闭环（100 Hz，抗积分饱和），正交编码器反馈，支持运行时增益调整
+> - 设计 4 路速度 PID 框架（100 Hz，抗积分饱和），支持运行时增益调整；完成真机阶跃测试后再补编码器和性能指标
 > - CI/CD：GitHub Actions 自动运行协议/PID/运动学单元测试 + SIL 闭环验证
 
 ---

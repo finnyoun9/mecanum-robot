@@ -24,7 +24,8 @@
 
 - 厂商舵机协议未确认，`servo_bus` 只有接口和 mock；真实驱动待 Stage 2 抓帧后补。
 - `ARM_FAULT_OVER_TEMP / UNDER_VOLT / OVERLOAD / WATCHDOG` 已入协议，但骨架未接线。
-- `PROTO_FRAME_OVERHEAD` 宏值为 6，实际帧开销是 7（CRC 占 2 字节）——测试沿用字面量 7，宏本身是历史遗留，未改动。
+- `PROTO_FRAME_OVERHEAD` 的 6→7 偏差已在 `9adae80` 修复；该提交当前仍需推送到远端。
+- Windows host 构建仍报告 packed joint 数组地址可能未对齐；上板前改为复制到对齐的本地数组并启用 `-Werror`。
 
 ---
 

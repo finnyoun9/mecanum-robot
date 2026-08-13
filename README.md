@@ -27,11 +27,15 @@ The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**.
 - **URDF 模型** ✅ — 4 麦克纳姆轮 + 传感器模型,已通过 xacro 展开并在 RViz2 中渲染(见下方截图)
 - **串口二进制协议** ✅ — 自定义协议 + CRC16-MODBUS 校验,Pi 与 STM32 共享的 C 库
 - **麦克纳姆轮运动学** ✅ — 正/逆运动学解算 + 单元测试(gtest,固件内也有 C 版)
-- **NRF24L01 无线遥控** ✅ — 2.4GHz 手柄全向遥控:机器人端接收驱动 + 摇杆→全向映射 + C 版逆运动学,CI 单测通过(见 [docs/remote_control.md](docs/remote_control.md))
-- **ROS2 驱动闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → 协议级 STM32 UART 模拟器全链路打通;0.3 m/s 指令实测里程计 0.302 m/s;麦克纳姆方形轨迹(含横向平移)在 RViz2 中渲染(见下方截图)
+- **NRF24L01 无线遥控** 🚧 — 接收驱动、摇杆映射、C 版逆运动学和 CI 单测已完成，待实物收发与电机联调(见 [docs/remote_control.md](docs/remote_control.md))
+- **ROS2 协议闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → STM32 UART 模拟器全链路打通；0.3 m/s 指令在协议模拟中得到 0.302 m/s 里程计，尚不是真实底盘结果
 - **STM32 FreeRTOS 固件** 🚧 — 4 路 PID 速度闭环框架已在 `firmware/`,真机联调待接线
-- **SIL 软件在环测试** ✅ — 固件编译为 Linux 原生可执行文件,Mock HAL + FreeRTOS 调度模拟器,CI 自动验证 PID 闭环(见 [docs/resume-highlights.md](docs/resume-highlights.md))
+- **SIL 软件在环测试** ✅ — 固件编译为 Linux 原生可执行文件，Mock HAL + FreeRTOS 调度模拟器在 CI 中验证命令解析、PWM、编码器累积和里程计数据链；不替代真机 PID 性能测试(见 [docs/resume-highlights.md](docs/resume-highlights.md))
 - **Nav2 + SLAM** 🚧 — 配置骨架已就位,待与里程计/激光数据联调
+
+> 当前最重要的缺口是真实底盘闭环。`motor.c` 的 TIM/GPIO 映射尚未落到实际硬件，具体步骤和验收指标见 [真机闭环与 PID 调试路线](docs/hardware-closed-loop-roadmap.md)。
+
+> 后续 Agent 请先读 [docs/agent-handoff.md](docs/agent-handoff.md)，按 M0→M1→M2 推进，不要把 SIL 或协议模拟器结果写成真机结果。
 
 > RViz2 渲染效果(无头 Xvfb 截图,1280×800):
 > - 静止渲染:[docs/screenshots/rviz2.png](docs/screenshots/rviz2.png)
@@ -68,7 +72,7 @@ STM32 (FreeRTOS + HAL)
   ├── NRF24L01 无线遥控 (全向控制)
   ├── ToF 紧急避障刹车
   ├── IMU 姿态解算 (Mahony 滤波器)
-  └── DMA 串口通信
+  └── DMA/IDLE 串口通信（代码路径已具备，CubeMX 与真机待接入）
 ```
 
 ## Directory Structure / 目录结构
@@ -180,15 +184,15 @@ python point_cloud_scanner.py
 
 ## Key Skills / 核心技术展示
 
-- **SIL 软件在环测试**:Mock HAL 层 + FreeRTOS 轮询调度模拟,固件编译为 Linux 原生可执行文件,CI 自动闭环验证 (★★★)
+- **SIL 软件在环测试**:Mock HAL 层 + FreeRTOS 轮询调度模拟，固件编译为 Linux 原生可执行文件，CI 自动验证控制数据链 (★★★)
 - **FreeRTOS**:5 任务实时调度,优先级管理,栈溢出监控
-- **PID 控制**:4 路独立速度闭环 (100 Hz),增量式算法 + 抗积分饱和
-- **UART/DMA 通信**:自定义二进制协议(双字节帧同步 + CRC16-MODBUS + 序号校验),状态机解析器
+- **PID 控制**:4 路位置式速度 PID 代码与 SIL 数据链验证 (100 Hz)，真机优先按 PI 调参
+- **UART/DMA 通信**:自定义二进制协议与 DMA/IDLE 接收代码，真机 CubeMX/时序待验证
 - **麦克纳姆轮运动学**:正/逆运动学,支持全向移动(横移 / 斜走 / 原地旋转)
 - **ros2_control**:自定义 `SystemInterface` 硬件接口,桥接串口 ↔ ROS2 控制器
 - **Nav2 导航**:全向路径规划 (DWB 局部规划器 + SmacPlannerHybrid 全局规划器)
 - **SLAM**:slam_toolbox 在线异步建图(激光 + IMU + 轮式里程计融合)
-- **激光三角法**:线激光 + 相机实现 3D 点云扫描,精度 <1mm
+- **激光三角法**:线激光 + 相机 3D 点云扫描代码，30 cm 下 <1 mm 是待实测目标
 - **YOLO 推理**:ONNX Runtime 边缘端目标检测
 
 ## Roadmap / 实施路线
@@ -202,7 +206,7 @@ python point_cloud_scanner.py
 
 ## Related Projects / 相关项目
 
-- **[stm32-balance-car](https://github.com/finnyoun9)** — STM32 平衡小车(基于江科大自平衡小车教程)。展示更多 MCU 技能:MPU6050 DMP、互补滤波、串级 PID(直立 / 速度 / 转向环)、NRF24L01 无线遥控。
+- **[stm32-pid-balancer](https://github.com/finnyoun9/stm32-pid-balancer)** — PID 控制实验台。当前有通用 PID、host test 和单电机 m01 固件，自平衡真机尚未完成。
 
 ## License / 许可证
 
