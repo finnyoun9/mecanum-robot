@@ -135,6 +135,38 @@ void test_encode_decode_odom_feedback(void) {
     printf("PASS: Encode/decode round-trip for CMD_ODOM_FEEDBACK\n");
 }
 
+/* ===== Full-Load Boundary Test ===== */
+
+void test_encode_decode_full_payload(void) {
+    uint8_t frame[PROTO_MAX_FRAME];
+    uint8_t frame_len = 0;
+    uint8_t payload[PROTO_MAX_PAYLOAD];
+
+    for (uint8_t i = 0; i < PROTO_MAX_PAYLOAD; i++) {
+        payload[i] = (uint8_t)(i * 3 + 1);
+    }
+
+    int ret = proto_encode(0xAB, payload, sizeof(payload), frame, &frame_len, 0x5A);
+    assert(ret == PROTO_MAX_PAYLOAD);
+    /* SYNC(2) + LEN(1) + SEQ(1) + CMD(1) + PAYLOAD(64) + CRC(2) = 71 bytes */
+    assert(frame_len == PROTO_FRAME_OVERHEAD + PROTO_MAX_PAYLOAD);
+    assert(frame_len == 71);
+
+    uint8_t cmd_out = 0;
+    uint8_t payload_out[PROTO_MAX_PAYLOAD];
+    uint8_t pay_len_out = 0;
+    uint8_t seq_out = 0;
+
+    ret = proto_decode(frame, frame_len, &cmd_out, payload_out, &pay_len_out, &seq_out);
+    assert(ret >= 0);
+    assert(cmd_out == 0xAB);
+    assert(pay_len_out == PROTO_MAX_PAYLOAD);
+    assert(seq_out == 0x5A);
+    assert(memcmp(payload, payload_out, PROTO_MAX_PAYLOAD) == 0);
+
+    printf("PASS: Full-load (64-byte) encode/decode round-trip, frame_len=71\n");
+}
+
 /* ===== Corruption Tests ===== */
 
 void test_corruption_detection(void) {
@@ -334,6 +366,9 @@ int main(void) {
     test_encode_decode_arm_set_pos();
     test_encode_decode_arm_torque();
     test_encode_decode_arm_state();
+
+    /* Full-load boundary test */
+    test_encode_decode_full_payload();
 
     /* Corruption tests */
     test_corruption_detection();

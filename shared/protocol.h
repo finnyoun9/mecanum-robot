@@ -25,7 +25,7 @@ extern "C" {
 #define PROTO_SYNC0      0xA5
 #define PROTO_SYNC1      0x5A
 #define PROTO_MAX_PAYLOAD 64
-#define PROTO_FRAME_OVERHEAD 6  /* SYNC0 + SYNC1 + LEN + SEQ + CMD + CRC16 */
+#define PROTO_FRAME_OVERHEAD 7  /* SYNC0 + SYNC1 + LEN + SEQ + CMD + CRC16(2 bytes) */
 #define PROTO_MAX_FRAME   (PROTO_FRAME_OVERHEAD + PROTO_MAX_PAYLOAD)
 
 /* --- Command IDs (Pi → STM32) --- */
