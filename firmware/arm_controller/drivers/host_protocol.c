@@ -34,12 +34,16 @@ int arm_controller_handle_frame(arm_controller_t *ac, const uint8_t *frame, uint
         if (sm->state == SAFETY_FAULT) {
             return -1; /* locked out until CMD_ARM_RESET */
         }
-        arm_set_pos_t *sp = (arm_set_pos_t *)payload;
-        if (safety_monitor_validate_targets(sm, sp->joint) < 0) {
+        /* Copy the packed wire payload into an aligned local first:
+         * casting the byte buffer straight to a packed float struct is
+         * undefined behaviour on ARM (unaligned float access traps). */
+        arm_set_pos_t sp;
+        memcpy(&sp, payload, sizeof(sp));
+        if (safety_monitor_validate_targets(sm, sp.joint) < 0) {
             arm_controller_fault(ac);
             return 0; /* fault latched; SET_POS rejected */
         }
-        arm_control_set_targets(ct, sp->joint);
+        arm_control_set_targets(ct, sp.joint);
         if (ct->torque_mask != 0 && sm->state == SAFETY_IDLE) {
             sm->state = SAFETY_ACTIVE;
         }
@@ -52,7 +56,9 @@ int arm_controller_handle_frame(arm_controller_t *ac, const uint8_t *frame, uint
         if (sm->state == SAFETY_FAULT) {
             return -1;
         }
-        arm_control_set_torque(ct, ((arm_torque_cmd_t *)payload)->mask);
+        arm_torque_cmd_t tc;
+        memcpy(&tc, payload, sizeof(tc));
+        arm_control_set_torque(ct, tc.mask);
         sm->state = (ct->torque_mask == 0) ? SAFETY_IDLE : SAFETY_ACTIVE;
         return 0;
     }

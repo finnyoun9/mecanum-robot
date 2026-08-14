@@ -100,11 +100,15 @@ void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len) {
     switch (cmd) {
     case CMD_VEL_CTRL: {
         if (len < sizeof(cmd_vel_ctrl_t)) break;
-        const cmd_vel_ctrl_t *vel = (const cmd_vel_ctrl_t *)payload;
-        g_robot.target_w[0] = vel->w1;
-        g_robot.target_w[1] = vel->w2;
-        g_robot.target_w[2] = vel->w3;
-        g_robot.target_w[3] = vel->w4;
+        /* Copy the packed wire payload into an aligned local first:
+         * casting a uint8_t buffer straight to a packed float struct is
+         * undefined behaviour on ARM (unaligned float access traps). */
+        cmd_vel_ctrl_t vel;
+        memcpy(&vel, payload, sizeof(vel));
+        g_robot.target_w[0] = vel.w1;
+        g_robot.target_w[1] = vel.w2;
+        g_robot.target_w[2] = vel.w3;
+        g_robot.target_w[3] = vel.w4;
         break;
     }
     case CMD_EMERGENCY_STOP:
@@ -112,11 +116,12 @@ void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len) {
         break;
     case CMD_PID_TUNE: {
         if (len < sizeof(cmd_pid_tune_t)) break;
-        const cmd_pid_tune_t *tune = (const cmd_pid_tune_t *)payload;
-        if (tune->motor_id < MOTOR_COUNT) {
-            pid_set_gains(&g_robot.pids[tune->motor_id],
-                          tune->kp, tune->ki, tune->kd);
-            g_robot.pids[tune->motor_id].integral_max = tune->integral_limit;
+        cmd_pid_tune_t tune;
+        memcpy(&tune, payload, sizeof(tune));
+        if (tune.motor_id < MOTOR_COUNT) {
+            pid_set_gains(&g_robot.pids[tune.motor_id],
+                          tune.kp, tune.ki, tune.kd);
+            g_robot.pids[tune.motor_id].integral_max = tune.integral_limit;
         }
         break;
     }

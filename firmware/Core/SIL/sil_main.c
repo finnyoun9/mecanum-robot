@@ -108,15 +108,16 @@ static int drain_tx_frames(void) {
                 if (ret >= 0 && cmd == CMD_ODOM_FEEDBACK) {
                     odo_count++;
                     if (pay_len >= 40) {
-                        odom_feedback_t *odom = (odom_feedback_t *)payload;
+                        odom_feedback_t odom;
+                        memcpy(&odom, payload, sizeof(odom));
                         printf("  [SIL] ODO frame seq=%d counts=[%d %d %d %d] "
                                "tof=%d mm\n",
                                seq,
-                               odom->encoder_counts[0],
-                               odom->encoder_counts[1],
-                               odom->encoder_counts[2],
-                               odom->encoder_counts[3],
-                               odom->tof_distance_mm);
+                               odom.encoder_counts[0],
+                               odom.encoder_counts[1],
+                               odom.encoder_counts[2],
+                               odom.encoder_counts[3],
+                               odom.tof_distance_mm);
                     }
                 }
                 state = IDLE;
