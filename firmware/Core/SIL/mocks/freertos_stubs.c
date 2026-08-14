@@ -165,6 +165,13 @@ BaseType_t xSemaphoreTake(SemaphoreHandle_t xSemaphore, TickType_t xTicksToWait)
     return pdPASS;
 }
 
+BaseType_t xSemaphoreGiveFromISR(SemaphoreHandle_t xSemaphore,
+                                 BaseType_t *pxHigherPriorityTaskWoken) {
+    (void)xSemaphore;
+    if (pxHigherPriorityTaskWoken) *pxHigherPriorityTaskWoken = pdFALSE;
+    return pdPASS;
+}
+
 /* ========================================================================
  *  Timer
  * ======================================================================== */

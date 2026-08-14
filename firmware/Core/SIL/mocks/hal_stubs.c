@@ -61,6 +61,9 @@ void HAL_UART_Transmit_DMA(UART_HandleTypeDef *huart, const uint8_t *data, uint1
         huart->tx_head = next;
     }
     huart->dma_tx_active = true;
+    /* Simulate instant DMA completion: the firmware's TX-complete callback
+     * is the only place the xTxComplete semaphore is given back. */
+    HAL_UART_TxCpltCallback(huart);
 }
 
 void HAL_UARTEx_ReceiveToIdle_DMA(UART_HandleTypeDef *huart, uint8_t *data, uint16_t len) {
@@ -70,6 +73,16 @@ void HAL_UARTEx_ReceiveToIdle_DMA(UART_HandleTypeDef *huart, uint8_t *data, uint
     huart->dma_rx_active = true;
     (void)data;
     (void)len;
+}
+
+void HAL_UART_AbortReceive(UART_HandleTypeDef *huart) {
+    if (!huart) return;
+    huart->dma_rx_active = false;
+}
+
+void HAL_UART_AbortTransmit(UART_HandleTypeDef *huart) {
+    if (!huart) return;
+    huart->dma_tx_active = false;
 }
 
 /* ========================================================================

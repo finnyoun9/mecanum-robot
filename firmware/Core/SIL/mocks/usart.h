@@ -20,6 +20,11 @@ typedef mock_uart_t UART_HandleTypeDef;
 /* --- API --- */
 void HAL_UART_Transmit_DMA(UART_HandleTypeDef *huart, const uint8_t *data, uint16_t len);
 void HAL_UARTEx_ReceiveToIdle_DMA(UART_HandleTypeDef *huart, uint8_t *data, uint16_t len);
+void HAL_UART_AbortReceive(UART_HandleTypeDef *huart);
+void HAL_UART_AbortTransmit(UART_HandleTypeDef *huart);
+
+/* Firmware-defined callbacks (main.c) invoked by the mock HAL. */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart);
 
 #ifdef __cplusplus
 }

@@ -46,67 +46,125 @@ static QueueHandle_t xCmdQueue;   /* Received commands → CtrlTask */
 /* --- UART TX buffer (written by robot_control, sent by CommTask) --- */
 static uint8_t  tx_buf[PROTO_MAX_FRAME];
 static uint8_t  tx_len = 0;
+/* Binary semaphore: available = no DMA TX in flight. Taken in
+ * comm_send_frame(), given back ONLY in HAL_UART_TxCpltCallback(). */
 SemaphoreHandle_t xTxComplete;
 
-/* --- UART RX ring buffer --- */
-#define RX_RING_SIZE 256
+/* --- UART RX: DMA staging buffer + software ring (separate objects) ---
+ * The DMA controller writes only into rx_stage; the RX-event callback
+ * copies each completed chunk into rx_ring (the parser's buffer) and
+ * updates the write pointer (rx_head). CommTask only ever reads the ring,
+ * so DMA and the parser never race on the same memory. */
+#define RX_RING_SIZE   256
+#define RX_STAGE_SIZE  64
 static uint8_t  rx_ring[RX_RING_SIZE];
-static volatile uint16_t rx_head = 0;
-static volatile uint16_t rx_tail = 0;
+static volatile uint16_t rx_head = 0;       /* ISR writes, task reads */
+static volatile uint16_t rx_tail = 0;       /* task writes, ISR reads */
+static volatile uint16_t rx_overflows = 0;  /* dropped bytes when ring full */
+
+static uint8_t rx_stage[RX_STAGE_SIZE];     /* DMA staging buffer */
 
 /**
  * @brief Feed bytes into the UART RX ring (for SIL / host testing).
  *
- * In production, DMA + IDLE-line ISR fills the ring.  In SIL, the test
- * harness calls this directly to simulate received protocol frames.
+ * In production, HAL_UARTEx_RxEventCallback() (below) fills the ring from
+ * the DMA staging buffer.  In SIL, the test harness calls this directly to
+ * simulate received protocol frames.
  */
 void sil_uart_rx_feed(const uint8_t *data, uint8_t len) {
     for (uint8_t i = 0; i < len; i++) {
-        uint16_t next = (rx_head + 1) % RX_RING_SIZE;
+        uint16_t next = (uint16_t)((rx_head + 1) % RX_RING_SIZE);
         if (next == rx_tail) break; /* ring full */
         rx_ring[rx_head] = data[i];
         rx_head = next;
     }
 }
 
+/** Telemetry hook: count of RX bytes dropped due to a full ring. */
+uint16_t comm_rx_overflows(void) {
+    return rx_overflows;
+}
+
 /* ======================================================================== */
 /*  UART HAL Callbacks (called from ISR)                                     */
 /* ======================================================================== */
 
-/*
- * DMA RX complete / IDLE line callback.
- * Frames received byte-by-byte via DMA into ring buffer.
- * CommTask parses frames from the ring.
+/**
+ * DMA RX chunk complete (IDLE line or staging buffer full).
  *
- * void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size) {
- *     rx_tail = (rx_tail + size) % RX_RING_SIZE;
- *     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
- *     xTaskNotifyFromISR(hCommTask, 0, eNoAction, &xHigherPriorityTaskWoken);
- *     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
- * }
+ * Copies the freshly staged bytes into the software ring, updates the
+ * write pointer, wakes CommTask, and re-arms DMA on the staging buffer.
+ * Kept short: bounded copy of at most RX_STAGE_SIZE bytes.
  */
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size) {
+    if (huart != &huart1) return;
 
-/*
- * Byte-level fallback if DMA IDLE not used.
- * void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
- *     uint8_t byte;
- *     HAL_UART_Receive_IT(huart, &byte, 1);
- *     rx_ring[rx_head] = byte;
- *     rx_head = (rx_head + 1) % RX_RING_SIZE;
- * }
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (size > 0) {
+        for (uint16_t i = 0; i < size; i++) {
+            uint16_t next = (uint16_t)((rx_head + 1) % RX_RING_SIZE);
+            if (next == rx_tail) {
+                rx_overflows++;           /* ring full: drop this byte */
+            } else {
+                rx_ring[rx_head] = rx_stage[i];
+                rx_head = next;
+            }
+        }
+        xTaskNotifyFromISR(hCommTask, 0, eNoAction, &xHigherPriorityTaskWoken);
+    }
+
+    /* Re-arm the next DMA chunk on the staging buffer. */
+    HAL_UARTEx_ReceiveToIdle_DMA(huart, rx_stage, RX_STAGE_SIZE);
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+/**
+ * DMA TX complete: the tx_buf frame has been fully shifted out.
+ * Return the buffer semaphore here — this is the ONLY place it is given
+ * back, so comm_send_frame() can never overwrite a frame still in flight.
  */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart != &huart1) return;
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xTxComplete, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+/**
+ * UART error: abort the in-flight transfers, return the TX buffer
+ * semaphore (safe for a binary semaphore — a give while available is a
+ * no-op) and re-arm RX so the link recovers without a task restart.
+ */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+    if (huart != &huart1) return;
+
+    HAL_UART_AbortReceive(huart);
+    HAL_UART_AbortTransmit(huart);
+    HAL_UARTEx_ReceiveToIdle_DMA(huart, rx_stage, RX_STAGE_SIZE);
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xTxComplete, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
 
 /* ======================================================================== */
 /*  Helper: non-blocking UART send                                           */
 /* ======================================================================== */
 
 void comm_send_frame(const uint8_t *frame, uint8_t len) {
-    if (xSemaphoreTake(xTxComplete, 0) == pdTRUE) {
-        memcpy(tx_buf, frame, len);
-        tx_len = len;
-        HAL_UART_Transmit_DMA(&huart1, tx_buf, tx_len);
-        xSemaphoreGive(xTxComplete); /* Released in TX complete callback */
-    }
+    if (len > PROTO_MAX_FRAME) return;
+
+    /* Non-blocking take: if the previous DMA transfer is still in flight,
+     * drop this frame rather than overwrite tx_buf under the DMA engine.
+     * The semaphore comes back only in HAL_UART_TxCpltCallback(). */
+    if (xSemaphoreTake(xTxComplete, 0) != pdTRUE) return;
+
+    memcpy(tx_buf, frame, len);
+    tx_len = len;
+    HAL_UART_Transmit_DMA(&huart1, tx_buf, tx_len);
 }
 
 uint32_t hal_get_tick_ms(void) {
@@ -147,7 +205,9 @@ void CommTask(void *pvParameters) {
     static bool initialized = false;
 
     if (!initialized) {
-        HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_ring, RX_RING_SIZE);
+        /* Arm DMA reception on the staging buffer. Chunks are copied into
+         * the software ring by HAL_UARTEx_RxEventCallback(). */
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_stage, RX_STAGE_SIZE);
         initialized = true;
     }
 
@@ -224,6 +284,9 @@ void CommTask(void *pvParameters) {
 void CtrlTask(void *pvParameters) {
     (void)pvParameters;
 
+#ifndef SIL_BUILD
+    /* FreeRTOS periodic-scheduling state. Compiled out in SIL builds,
+     * where the cooperative harness drives one iteration per tick. */
     static TickType_t xLastWakeTime;
     static bool initialized = false;
     const TickType_t xPeriod = pdMS_TO_TICKS(1000 / CTRL_LOOP_HZ);
@@ -232,6 +295,7 @@ void CtrlTask(void *pvParameters) {
         xLastWakeTime = xTaskGetTickCount();
         initialized = true;
     }
+#endif
 
 #ifndef SIL_BUILD
     for (;;) {
@@ -250,14 +314,19 @@ void CtrlTask(void *pvParameters) {
 void SensorTask(void *pvParameters) {
     (void)pvParameters;
 
-    static TickType_t xLastWakeTime;
     static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f};
     static uint8_t tof_divider = 0;
     static bool initialized = false;
     const float xImuDt = 0.010f; /* matches this task's 10ms period */
 
+#ifndef SIL_BUILD
+    static TickType_t xLastWakeTime;
+#endif
+
     if (!initialized) {
+#ifndef SIL_BUILD
         xLastWakeTime = xTaskGetTickCount();
+#endif
         mpu6050_init();
         tof_init();
         initialized = true;

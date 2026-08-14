@@ -79,6 +79,8 @@ BaseType_t xQueueReceive(QueueHandle_t xQueue, void *pvBuffer,
 SemaphoreHandle_t xSemaphoreCreateBinary(void);
 BaseType_t xSemaphoreGive(SemaphoreHandle_t xSemaphore);
 BaseType_t xSemaphoreTake(SemaphoreHandle_t xSemaphore, TickType_t xTicksToWait);
+BaseType_t xSemaphoreGiveFromISR(SemaphoreHandle_t xSemaphore,
+                                 BaseType_t *pxHigherPriorityTaskWoken);
 
 /* --- Software timer --- */
 TimerHandle_t xTimerCreate(const char *pcTimerName, TickType_t xTimerPeriod,
