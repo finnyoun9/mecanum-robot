@@ -39,11 +39,16 @@ int arm_controller_handle_frame(arm_controller_t *ac, const uint8_t *frame, uint
          * undefined behaviour on ARM (unaligned float access traps). */
         arm_set_pos_t sp;
         memcpy(&sp, payload, sizeof(sp));
-        if (safety_monitor_validate_targets(sm, sp.joint) < 0) {
+        /* sp.joint is a packed struct member: copy into an aligned array
+         * before passing by pointer, otherwise the compiler flags
+         * address-of-packed-member (unaligned float access on ARM). */
+        float joint[ARM_JOINT_COUNT];
+        memcpy(joint, sp.joint, sizeof(joint));
+        if (safety_monitor_validate_targets(sm, joint) < 0) {
             arm_controller_fault(ac);
             return 0; /* fault latched; SET_POS rejected */
         }
-        arm_control_set_targets(ct, sp.joint);
+        arm_control_set_targets(ct, joint);
         if (ct->torque_mask != 0 && sm->state == SAFETY_IDLE) {
             sm->state = SAFETY_ACTIVE;
         }
