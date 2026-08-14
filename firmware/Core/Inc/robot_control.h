@@ -19,10 +19,12 @@
 #define TOF_READ_HZ      20    /* ToF read frequency */
 #define COMM_WATCHDOG_MS 100   /* Communication timeout */
 
-/* --- Default PID gains (tuned per motor, these are starting points) --- */
+/* --- Default PID gains (tuned per motor, these are starting points) ---
+ * Speed loop starts as pure PI (Kd = 0) per the closed-loop roadmap:
+ * tune Kp, then Ki on the real chassis first, add D only if needed. */
 #define PID_KP_DEFAULT   2.5f
 #define PID_KI_DEFAULT   0.8f
-#define PID_KD_DEFAULT   0.05f
+#define PID_KD_DEFAULT   0.0f
 #define PID_OUT_MAX      1000.0f   /* PWM range */
 #define PID_INTEGRAL_MAX 300.0f
 

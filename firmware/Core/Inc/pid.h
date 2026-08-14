@@ -23,10 +23,12 @@ typedef struct {
     float integral_max;  /* Max absolute integral term */
 
     /* State */
-    float setpoint;      /* Target value */
-    float integral;      /* Accumulated integral */
-    float prev_error;    /* Previous error (for D term) */
-    float output;        /* Last computed output */
+    float setpoint;          /* Target value */
+    float integral;          /* Accumulated integral */
+    float prev_error;        /* Previous error (kept for diagnostics) */
+    float prev_measurement;  /* Previous measurement (for D term) */
+    float output;            /* Last computed output */
+    bool  prev_meas_valid;   /* prev_measurement holds a real sample */
 
     /* Config */
     float dt;            /* Sample time in seconds */

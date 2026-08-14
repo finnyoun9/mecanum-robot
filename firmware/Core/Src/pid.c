@@ -18,6 +18,7 @@ void pid_init(pid_ctrl_t *pid, float kp, float ki, float kd,
     pid->prev_error   = 0.0f;
     pid->output       = 0.0f;
     pid->enabled      = true;
+    pid_reset(pid);
 }
 
 void pid_setpoint(pid_ctrl_t *pid, float sp) {
@@ -25,9 +26,11 @@ void pid_setpoint(pid_ctrl_t *pid, float sp) {
 }
 
 void pid_reset(pid_ctrl_t *pid) {
-    pid->integral   = 0.0f;
-    pid->prev_error = 0.0f;
-    pid->output     = 0.0f;
+    pid->integral         = 0.0f;
+    pid->prev_error       = 0.0f;
+    pid->prev_measurement = 0.0f;
+    pid->prev_meas_valid  = false; /* first sample after reset: D term = 0 */
+    pid->output           = 0.0f;
 }
 
 void pid_set_gains(pid_ctrl_t *pid, float kp, float ki, float kd) {
@@ -53,9 +56,16 @@ float pid_update(pid_ctrl_t *pid, float measurement) {
     if (pid->integral < -pid->integral_max) pid->integral = -pid->integral_max;
     float i_term = pid->ki * pid->integral;
 
-    /* Derivative (on measurement to avoid derivative kick) */
-    float d_term = pid->kd * (error - pid->prev_error) / pid->dt;
-    pid->prev_error = error;
+    /* Derivative on measurement (no kick on setpoint changes).
+     * D reacts only to measurement changes; a setpoint step therefore
+     * produces no derivative spike (unlike derivative-on-error). */
+    float d_term = 0.0f;
+    if (pid->prev_meas_valid && pid->dt > 0.0f) {
+        d_term = -pid->kd * (measurement - pid->prev_measurement) / pid->dt;
+    }
+    pid->prev_measurement = measurement;
+    pid->prev_meas_valid  = true;
+    pid->prev_error       = error;
 
     /* Sum and clamp */
     float out = p_term + i_term + d_term;
