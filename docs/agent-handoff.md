@@ -2,6 +2,19 @@
 
 > 基线：2026-08-13。详细步骤见 [hardware-closed-loop-roadmap.md](hardware-closed-loop-roadmap.md)。
 
+## ⚠️ 2026-08-17：main / docs/hardware-mvp-roadmap 历史被重写过
+
+用 `git-filter-repo` 清理了全部 16 个提交里的 `Co-Authored-By: Claude` trailer，然后 force-push 覆盖了 `origin/main` 和 `origin/docs/hardware-mvp-roadmap`。**所有提交哈希都变了**。
+
+任何其他机器/clone 上如果还留着旧历史，`git pull` 会冲突或产生重复提交。正确做法：
+
+```bash
+git fetch origin
+git reset --hard origin/main   # 或对应分支
+```
+
+以后所有提交都不再加 Co-Authored-By trailer，这是用户的明确要求，不是遗漏。
+
 ## 当前真实状态
 
 - 共享协议、运动学、ROS 2 接口、协议模拟闭环和两套 SIL 已有代码。
