@@ -2,17 +2,10 @@
  * @file motor.c
  * @brief Motor driver implementation for TB6612FNG via STM32 HAL.
  *
- * Hardware mapping (example — adjust to actual wiring):
- *
- *   Board 1 (FL + FR):
- *     FL: DIR=PA4,  PWM=TIM3_CH1 (PA6)
- *     FR: DIR=PA5,  PWM=TIM3_CH2 (PA7)
- *     STBY: PB0 (shared)
- *
- *   Board 2 (RL + RR):
- *     RL: DIR=PB12, PWM=TIM4_CH1 (PB6)
- *     RR: DIR=PB13, PWM=TIM4_CH2 (PB7)
- *     STBY: PB1 (shared)
+ * TB6612 needs AIN1/AIN2 (or BIN1/BIN2) driven complementarily to select
+ * forward/reverse — a single DIR pin can only reach brake/coast plus one
+ * direction, never both. See docs/wiring.md for the confirmed
+ * STM32F103C8T6 pin table (Board 1 = FL+FR, Board 2 = RL+RR).
  *
  * PWM frequency: 20 kHz (above audible range)
  * PWM resolution: 1000 steps (ARR = 999)
@@ -30,21 +23,23 @@
 
 /* --- Per-motor pin/binding table --- */
 typedef struct {
-    GPIO_TypeDef *dir_port;
-    uint16_t      dir_pin;
+    GPIO_TypeDef *dir_port_a;   /* AIN1/BIN1 */
+    uint16_t      dir_pin_a;
+    GPIO_TypeDef *dir_port_b;   /* AIN2/BIN2 — driven as complement of A */
+    uint16_t      dir_pin_b;
     TIM_HandleTypeDef *htim;
     uint32_t      tim_channel;  /* TIM_CHANNEL_1..4 */
 } motor_pin_t;
 
 /*
- * Example pin mapping — pin assignments depend on actual STM32 model.
- * Fill these in from your CubeMX .ioc file.
+ * Filled in at runtime via motor_set_tim() — see docs/wiring.md for the
+ * confirmed STM32F103C8T6 pin assignment.
  */
 static motor_pin_t motor_pins[MOTOR_COUNT] = {
-    /* FL */ {NULL, 0, NULL, 0},  /* TODO: Wire to TIMx_CHy */
-    /* FR */ {NULL, 0, NULL, 0},
-    /* RL */ {NULL, 0, NULL, 0},
-    /* RR */ {NULL, 0, NULL, 0},
+    /* FL */ {NULL, 0, NULL, 0, NULL, 0},
+    /* FR */ {NULL, 0, NULL, 0, NULL, 0},
+    /* RL */ {NULL, 0, NULL, 0, NULL, 0},
+    /* RR */ {NULL, 0, NULL, 0, NULL, 0},
 };
 
 static bool emergency_stopped = true;
@@ -58,8 +53,12 @@ static void motor_set_pwm(motor_id_t id, uint16_t duty) {
 
 static void motor_set_dir(motor_id_t id, bool forward) {
     motor_pin_t *m = &motor_pins[id];
-    if (!m->dir_port) return;
-    HAL_GPIO_WritePin(m->dir_port, m->dir_pin, forward ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    if (!m->dir_port_a || !m->dir_port_b) return;
+    /* AIN1/AIN2 (or BIN1/BIN2) driven complementarily: forward = (H,L),
+     * reverse = (L,H). Never (H,H)/(L,L) — that's brake/coast, not a
+     * direction. */
+    HAL_GPIO_WritePin(m->dir_port_a, m->dir_pin_a, forward ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(m->dir_port_b, m->dir_pin_b, forward ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
 
 void motor_init(void) {
@@ -99,11 +98,15 @@ bool motor_is_stopped(void) {
     return emergency_stopped;
 }
 
-void motor_set_tim(motor_id_t id, void *htim, void *dir_port,
-                   uint16_t dir_pin, uint32_t tim_ch) {
+void motor_set_tim(motor_id_t id, void *htim,
+                   void *dir_port_a, uint16_t dir_pin_a,
+                   void *dir_port_b, uint16_t dir_pin_b,
+                   uint32_t tim_ch) {
     if (id >= MOTOR_COUNT) return;
     motor_pins[id].htim        = (TIM_HandleTypeDef *)htim;
-    motor_pins[id].dir_port    = (GPIO_TypeDef *)dir_port;
-    motor_pins[id].dir_pin     = dir_pin;
+    motor_pins[id].dir_port_a  = (GPIO_TypeDef *)dir_port_a;
+    motor_pins[id].dir_pin_a   = dir_pin_a;
+    motor_pins[id].dir_port_b  = (GPIO_TypeDef *)dir_port_b;
+    motor_pins[id].dir_pin_b   = dir_pin_b;
     motor_pins[id].tim_channel = tim_ch;
 }

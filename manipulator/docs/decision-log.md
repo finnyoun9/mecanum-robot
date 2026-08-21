@@ -1,5 +1,22 @@
 # Decision log
 
+## 2026-08-20 — LeArm smart-bus SKU out of stock
+
+### Context
+
+原定采购的 LeArm 智能总线舵机版散件缺货。
+
+### Decision
+
+- 维持总线舵机路线,不降级为普通 PWM 数字舵机。host protocol（`CMD_ARM_STATE` 回报 `ARM_FAULT_OVER_TEMP` / `UNDER_VOLT` / `OVERLOAD` 等）和 `servo_bus` 抽象都假设舵机能自行上报状态,PWM 舵机没有这个能力,换用会导致这部分协议设计和简历里"多轴总线通信/故障诊断"的价值落空。
+- 下一步：等原 SKU 补货，或改找其他总线舵机货源/品牌（结构件不必锁死 LeArm，只要求舵机是可寻址、可回读状态的智能总线舵机）。
+
+### Risks / Open
+
+- 具体备选货源/型号尚未确定，需要进一步调研。
+
+---
+
 ## 2026-08-13 — Host protocol v1 + arm controller SIL skeleton
 
 ### Context

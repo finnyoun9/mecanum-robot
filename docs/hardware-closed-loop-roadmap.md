@@ -1,6 +1,6 @@
 # 真机闭环与 PID 调试路线
 
-> 基线：2026-08-13。当前 ROS 2、协议、运动学和 SIL 已跑通；STM32 电机引脚仍是 `TODO`，真实底盘尚未形成编码器速度闭环。
+> 基线：2026-08-13，2026-08-21 更新硬件确认状态。当前 ROS 2、协议、运动学和 SIL 已跑通；主控已确认为 **STM32F103C8T6**，接线方案见 [docs/wiring.md](wiring.md)（不再是候选阶段）。底盘、电机已装好，正在接线，真实底盘尚未形成编码器速度闭环。
 
 ## 项目边界
 
@@ -15,9 +15,9 @@
 
 ## M0：硬件基线
 
-1. 记录 STM32 型号、电机型号、减速比、编码器线数、轮径、TB6612 引脚和电源结构。
+1. ~~记录 STM32 型号、电机型号、TB6612 引脚和电源结构~~ —— 已确认：STM32F103C8T6、TB6612 ×2（裸露 AIN1/AIN2/BIN1/BIN2 引脚）、MPU6050，引脚表见 [docs/wiring.md](wiring.md#已确认引脚分配stm32f103c8t62026-08-21)。电机型号/减速比/编码器线数/轮径待补。
 2. 用万用表确认电机/逻辑电源、共地和短路；DP100 限流上电。
-3. 补齐 CubeMX/PlatformIO 工程及 `motor.c`、`encoder.c` 的真实 TIM/GPIO 映射。
+3. 补齐 CubeMX/PlatformIO 工程及 `motor.c`、`encoder.c` 的真实 TIM/GPIO 映射（`motor.c` 已改为双方向引脚 AIN1/AIN2 互补驱动；RR 电机编码器走软件 EXTI 解码，尚未实现，见 wiring.md 待办）。
 4. 明确急停默认态、通信超时和上电禁止误转策略。
 5. 完成真正的 UART DMA/IDLE：DMA staging buffer 与软件 ring 分离，RX callback 更新写指针；TX semaphore 只在完成回调释放。当前 callback 仍是注释骨架。
 

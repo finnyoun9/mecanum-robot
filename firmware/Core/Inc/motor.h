@@ -6,7 +6,9 @@
  * to drive 4 motors (FL, FR, RL, RR).
  *
  * Interface per motor:
- *   - DIR pin: GPIO output (0=reverse, 1=forward)
+ *   - DIR pins: 2× GPIO output driven complementarily (AIN1/AIN2 or
+ *     BIN1/BIN2) — TB6612 needs both to select forward/reverse without
+ *     landing on brake/coast. A single DIR pin cannot do this.
  *   - PWM pin: TIM PWM channel (duty cycle 0-100%)
  *   - (optional) STBY pin: shared standby, pulled high for enable
  */
@@ -50,18 +52,22 @@ void motor_resume(void);
 bool motor_is_stopped(void);
 
 /**
- * @brief Wire a motor to a TIM channel + DIR GPIO.
+ * @brief Wire a motor to a TIM channel + complementary DIR GPIO pair.
  *
  * In production this is a static pin-mapping table; for SIL testing it lets
  * the test harness connect mock TIM handles at runtime.
  *
- * @param id         Motor index
- * @param htim       TIM handle (mock_tim_t* in SIL, real TIM_HandleTypeDef* on HW)
- * @param dir_port   DIR GPIO port (NULL = mock)
- * @param dir_pin    DIR GPIO pin
- * @param tim_ch     TIM channel (TIM_CHANNEL_1..4)
+ * @param id          Motor index
+ * @param htim        TIM handle (mock_tim_t* in SIL, real TIM_HandleTypeDef* on HW)
+ * @param dir_port_a  AIN1/BIN1 GPIO port (NULL = mock)
+ * @param dir_pin_a   AIN1/BIN1 GPIO pin
+ * @param dir_port_b  AIN2/BIN2 GPIO port — driven as the complement of pin A
+ * @param dir_pin_b   AIN2/BIN2 GPIO pin
+ * @param tim_ch      TIM channel (TIM_CHANNEL_1..4)
  */
-void motor_set_tim(motor_id_t id, void *htim, void *dir_port,
-                   uint16_t dir_pin, uint32_t tim_ch);
+void motor_set_tim(motor_id_t id, void *htim,
+                   void *dir_port_a, uint16_t dir_pin_a,
+                   void *dir_port_b, uint16_t dir_pin_b,
+                   uint32_t tim_ch);
 
 #endif /* MOTOR_H */

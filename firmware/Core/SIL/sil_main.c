@@ -150,10 +150,10 @@ int main(int argc, char **argv) {
     /* --- 1. Wire mock peripherals before robot_init() ---
      *     encoder_init() preserves htim pointers set by encoder_set_tim(),
      *     and motor_init() finds the htim handles to start PWM. */
-    motor_set_tim(MOTOR_FL, &mock_tim2, &mock_gpioa, GPIO_PIN_4, TIM_CHANNEL_1);
-    motor_set_tim(MOTOR_FR, &mock_tim3, &mock_gpioa, GPIO_PIN_5, TIM_CHANNEL_1);
-    motor_set_tim(MOTOR_RL, &mock_tim4, &mock_gpiob, GPIO_PIN_12, TIM_CHANNEL_1);
-    motor_set_tim(MOTOR_RR, &mock_tim5, &mock_gpiob, GPIO_PIN_13, TIM_CHANNEL_1);
+    motor_set_tim(MOTOR_FL, &mock_tim2, &mock_gpioa, GPIO_PIN_4, &mock_gpioa, GPIO_PIN_5, TIM_CHANNEL_1);
+    motor_set_tim(MOTOR_FR, &mock_tim3, &mock_gpioa, GPIO_PIN_11, &mock_gpioa, GPIO_PIN_12, TIM_CHANNEL_1);
+    motor_set_tim(MOTOR_RL, &mock_tim4, &mock_gpiob, GPIO_PIN_1, &mock_gpiob, GPIO_PIN_15, TIM_CHANNEL_1);
+    motor_set_tim(MOTOR_RR, &mock_tim5, &mock_gpioc, GPIO_PIN_13, &mock_gpioc, GPIO_PIN_14, TIM_CHANNEL_1);
 
     encoder_set_tim(MOTOR_FL, &mock_tim2);
     encoder_set_tim(MOTOR_FR, &mock_tim3);
