@@ -1,6 +1,6 @@
 # 真机闭环与 PID 调试路线
 
-> 基线：2026-08-13。当前 ROS 2、协议、运动学和 SIL 已跑通；STM32 电机引脚仍是 `TODO`，真实底盘尚未形成编码器速度闭环。
+> 基线：2026-08-21。当前 ROS 2、协议、运动学和 SIL 已跑通；Blue Pill、第一块 TB6612 和左前电机已完成面包板接线，但尚未上电验收，固件真机引脚仍是 `TODO`。
 
 ## 项目边界
 
@@ -15,9 +15,9 @@
 
 ## M0：硬件基线
 
-1. 记录 STM32 型号、电机型号、减速比、编码器线数、轮径、TB6612 引脚和电源结构。
+1. 已确认 STM32F103C8T6 Blue Pill、JGA25-370 六线编码器电机和 TB6612；减速比、轮径、编码器输出轴每圈计数仍需实测。
 2. 用万用表确认电机/逻辑电源、共地和短路；DP100 限流上电。
-3. 补齐 CubeMX/PlatformIO 工程及 `motor.c`、`encoder.c` 的真实 TIM/GPIO 映射。
+3. 先为左前轮补齐固件映射：PWM `PA6/TIM3_CH1`，AIN1/AIN2 `PA4/PA5`，STBY `PB12`，编码器 A/B `PA0/PA1` (`TIM2_CH1/CH2`)。`motor.c` 必须先从单 `DIR` 改为 `IN1/IN2`。
 4. 明确急停默认态、通信超时和上电禁止误转策略。
 5. 完成真正的 UART DMA/IDLE：DMA staging buffer 与软件 ring 分离，RX callback 更新写指针；TX semaphore 只在完成回调释放。当前 callback 仍是注释骨架。
 

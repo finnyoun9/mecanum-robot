@@ -29,11 +29,11 @@ The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**.
 - **麦克纳姆轮运动学** ✅ — 正/逆运动学解算 + 单元测试(gtest,固件内也有 C 版)
 - **NRF24L01 无线遥控** 🚧 — 接收驱动、摇杆映射、C 版逆运动学和 CI 单测已完成，待实物收发与电机联调(见 [docs/remote_control.md](docs/remote_control.md))
 - **ROS2 协议闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → STM32 UART 模拟器全链路打通；0.3 m/s 指令在协议模拟中得到 0.302 m/s 里程计，尚不是真实底盘结果
-- **STM32 FreeRTOS 固件** 🚧 — 4 路 PID 速度闭环框架已在 `firmware/`,真机联调待接线
+- **STM32 FreeRTOS 固件** 🚧 — 4 路 PID 速度闭环框架已在 `firmware/`；Blue Pill、第一块 TB6612 和左前 JGA25-370 已完成面包板接线，尚未上电验收或接入其他三轮
 - **SIL 软件在环测试** ✅ — 固件编译为 Linux 原生可执行文件，Mock HAL + FreeRTOS 调度模拟器在 CI 中验证命令解析、PWM、编码器累积和里程计数据链；不替代真机 PID 性能测试(见 [docs/resume-highlights.md](docs/resume-highlights.md))
 - **Nav2 + SLAM** 🚧 — 配置骨架已就位,待与里程计/激光数据联调
 
-> 当前最重要的缺口是真实底盘闭环。`motor.c` 的 TIM/GPIO 映射尚未落到实际硬件，具体步骤和验收指标见 [真机闭环与 PID 调试路线](docs/hardware-closed-loop-roadmap.md)。
+> 当前最重要的缺口是左前轮单轮开环验收。实物主控已确认为 STM32F103C8T6 Blue Pill（4 MHz HSE 配置之前已废弃，当前板为 8 MHz HSE → PLL×8 = 64 MHz）；`motor.c` 仍需从单 `DIR` 改为 TB6612 的 `IN1/IN2` 并落实真机映射。具体接线见 [接线指南](docs/wiring.md)，验收指标见 [真机闭环与 PID 调试路线](docs/hardware-closed-loop-roadmap.md)。
 
 > 后续 Agent 请先读 [docs/agent-handoff.md](docs/agent-handoff.md)，按 M0→M1→M2 推进，不要把 SIL 或协议模拟器结果写成真机结果。
 

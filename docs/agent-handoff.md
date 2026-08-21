@@ -1,6 +1,6 @@
 # Agent 交接：真实底盘闭环
 
-> 基线：2026-08-13。详细步骤见 [hardware-closed-loop-roadmap.md](hardware-closed-loop-roadmap.md)。
+> 基线：2026-08-21。详细步骤见 [hardware-closed-loop-roadmap.md](hardware-closed-loop-roadmap.md)。
 
 ## ⚠️ 2026-08-17：main / docs/hardware-mvp-roadmap 历史被重写过
 
@@ -19,7 +19,10 @@ git reset --hard origin/main   # 或对应分支
 
 - 共享协议、运动学、ROS 2 接口、协议模拟闭环和两套 SIL 已有代码。
 - 独立机械臂仓库已通过 subtree 合入 `manipulator/`；后续只维护本仓库。
-- `firmware/Core/Src/motor.c` 的四路 TIM/GPIO 仍为 `NULL` 占位，真机速度闭环尚未开始。
+- 底盘实物主控为 STM32F103C8T6 Blue Pill，当前板已确认 8 MHz HSE，使用 HSE → PLL×8 = 64 MHz。
+- Blue Pill、第一块 TB6612 与左前 JGA25-370 已在面包板上完成物理接线；未上电、未验证 PWM/方向/编码器波形，其他三轮和 MPU6050 未接。
+- `firmware/Core/Src/motor.c` 的四路 TIM/GPIO 仍为 `NULL` 占位，且每路只有一个 `DIR` 抽象，与 TB6612 实际需要的 `IN1/IN2` 不匹配。
+- 左前轮单轮验证预留：PWM `PA6/TIM3_CH1`，AIN1/AIN2 `PA4/PA5`，STBY `PB12`，编码器 A/B `PA0/PA1` (`TIM2_CH1/CH2`)。
 - UART DMA/IDLE、NRF24L01、IMU、ToF、Nav2 和机械臂舵机总线都不能按真机完成描述。
 
 ## 下一阶段只做三件事
