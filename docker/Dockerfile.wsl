@@ -1,0 +1,31 @@
+# ROS2 Jazzy environment for the mecanum robot — WSL (amd64) variant.
+# Same as Dockerfile, but apt sources switched to TUNA mirror for CN network
+# stability (the original Dockerfile's proxy-dependent apt hit 502s on CN).
+# Keep in sync with docker/Dockerfile.
+
+FROM ros:jazzy-ros-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN find /etc/apt/sources.list.d -type f -exec sed -i 's|http://archive.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g; s|http://packages.ros.org/ros2/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu|g' {} + && apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends \
+    ros-jazzy-ros2-control \
+    ros-jazzy-ros2-controllers \
+    ros-jazzy-robot-localization \
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup \
+    ros-jazzy-xacro \
+    ros-jazzy-robot-state-publisher \
+    ros-jazzy-joint-state-publisher \
+    ros-jazzy-teleop-twist-keyboard \
+    ros-jazzy-rmw-cyclonedds-cpp \
+    python3-colcon-common-extensions \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /ros2_ws
+
+ENTRYPOINT ["/entrypoint.sh"]
