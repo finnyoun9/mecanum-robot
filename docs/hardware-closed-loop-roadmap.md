@@ -1,6 +1,6 @@
 # 真机闭环与 PID 调试路线
 
-> 基线：2026-08-13，2026-08-21 更新硬件确认状态。当前 ROS 2、协议、运动学和 SIL 已跑通；主控已确认为 **STM32F103C8T6**，接线方案见 [docs/wiring.md](wiring.md)（不再是候选阶段）。底盘、电机已装好，正在接线，真实底盘尚未形成编码器速度闭环。
+> 基线：2026-08-13，2026-08-21 更新硬件确认状态，2026-08-22 首次真机上电。当前 ROS 2、协议、运动学和 SIL 已跑通；主控已确认为 **STM32F103C8T6**，接线方案见 [docs/wiring.md](wiring.md)（不再是候选阶段）。ST-Link 已连接真机并跑通最小 bring-up（时钟初始化 + GPIO 翻转，经 GDB 读寄存器验证），但这只证明了工具链本身，完整 FreeRTOS 机器人固件（PID/编码器/协议）还没有对应的真机外设初始化（MSP），仍不能烧录运行；真实底盘尚未形成编码器速度闭环。
 
 ## 项目边界
 
@@ -17,9 +17,9 @@
 
 1. ~~记录 STM32 型号、电机型号、TB6612 引脚和电源结构~~ —— 已确认：STM32F103C8T6、TB6612 ×2（裸露 AIN1/AIN2/BIN1/BIN2 引脚）、MPU6050，引脚表见 [docs/wiring.md](wiring.md#已确认引脚分配stm32f103c8t62026-08-21)。电机型号/减速比/编码器线数/轮径待补。
 2. 用万用表确认电机/逻辑电源、共地和短路；DP100 限流上电。
-3. 补齐 CubeMX/PlatformIO 工程及 `motor.c`、`encoder.c` 的真实 TIM/GPIO 映射（`motor.c` 已改为双方向引脚 AIN1/AIN2 互补驱动；RR 电机编码器走软件 EXTI 解码，尚未实现，见 wiring.md 待办）。
+3. ~~补齐真机可编译固件~~ —— 项目没有 CubeMX .ioc，手动 vendor 了官方 STM32Cube HAL/CMSIS/FreeRTOS（`firmware/Core/Drivers`、`firmware/Core/Middleware`），链接脚本/启动文件复用 `remote_controller` 已验证过的路径。`firmware/Core/HW/` 下的最小 bring-up（时钟 HSI+PLL@64MHz + GPIO 翻转）已编译、烧录、经 GDB 读寄存器验证在真机上运行。**这只证明了工具链**，`motor.c`/`encoder.c` 的真实 TIM/GPIO 映射（双方向引脚 AIN1/AIN2 互补驱动已在代码里；RR 电机软件 EXTI 解码还没实现）和整个 FreeRTOS 应用的外设 MSP 初始化（TIM 编码器模式、UART DMA、I2C）都还没接上，`firmware_arch_main()` 还不能在真机上跑。
 4. 明确急停默认态、通信超时和上电禁止误转策略。
-5. 完成真正的 UART DMA/IDLE：DMA staging buffer 与软件 ring 分离，RX callback 更新写指针；TX semaphore 只在完成回调释放。当前 callback 仍是注释骨架。
+5. ~~完成真正的 UART DMA/IDLE~~ —— 已实现（DMA staging buffer 与软件 ring 分离，`HAL_UARTEx_RxEventCallback` 更新写指针，`HAL_UART_TxCpltCallback` 释放 TX 信号量，见 `firmware/Core/Src/main.c`）。这是 SIL 里验证过的逻辑，真机上还没跑过。
 
 通过条件：引脚表、接线图和电源电流有记录；四个轮子可以被逐路、安全地开环驱动。
 
