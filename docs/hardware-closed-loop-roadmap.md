@@ -17,7 +17,7 @@
 
 1. ~~记录 STM32 型号、电机型号、TB6612 引脚和电源结构~~ —— 已确认：STM32F103C8T6、TB6612 ×2（裸露 AIN1/AIN2/BIN1/BIN2 引脚）、MPU6050，引脚表见 [docs/wiring.md](wiring.md#已确认引脚分配stm32f103c8t62026-08-21)。电机型号/减速比/编码器线数/轮径待补。
 2. ~~用万用表确认电机/逻辑电源、共地和短路；DP100 限流上电。~~ —— 已完成四轮 6 V 限流开环验证；正式电池供电改造按 [供电方案](power-system.md) 执行。
-3. ~~补齐真机可编译固件~~ —— 项目没有 CubeMX .ioc，手动 vendor 了官方 STM32Cube HAL/CMSIS/FreeRTOS（`firmware/Core/Drivers`、`firmware/Core/Middleware`），链接脚本/启动文件复用 `remote_controller` 已验证过的路径。`firmware/Core/HW/` 下的最小 bring-up（时钟 HSI+PLL@64MHz + GPIO 翻转）已编译、烧录、经 GDB 读寄存器验证在真机上运行。**这只证明了工具链**，`motor.c`/`encoder.c` 的真实 TIM/GPIO 映射（双方向引脚 AIN1/AIN2 互补驱动已在代码里；RR 电机软件 EXTI 解码还没实现）和整个 FreeRTOS 应用的外设 MSP 初始化（TIM 编码器模式、UART DMA、I2C）都还没接上，`firmware_arch_main()` 还不能在真机上跑。
+3. ~~补齐真机可编译固件~~ —— 项目没有 CubeMX .ioc，手动 vendor 了官方 STM32Cube HAL/CMSIS/FreeRTOS（`firmware/Core/Drivers`、`firmware/Core/Middleware`），链接脚本/启动文件复用 `remote_controller` 已验证过的路径。`firmware/Core/HW/` 下的最小 bring-up（时钟 HSI+PLL@64MHz + GPIO 翻转）已编译、烧录、经 GDB 读寄存器验证在真机上运行。**这只证明了工具链**。此后 `firmware/Core/HW/` 下的裸机目标已验证四路电机开环驱动和四路编码器软件解码（见该目录 README），但 `encoder.c` 仍写的是走不通的硬件定时器编码器模式、`motor.c` 的引脚映射也还没落到真实值，整个 FreeRTOS 应用的外设 MSP 初始化（UART DMA、I2C）同样没接上，`firmware_arch_main()` 还不能在真机上跑。
 4. 明确急停默认态、通信超时和上电禁止误转策略。
 5. ~~完成真正的 UART DMA/IDLE~~ —— 已实现（DMA staging buffer 与软件 ring 分离，`HAL_UARTEx_RxEventCallback` 更新写指针，`HAL_UART_TxCpltCallback` 释放 TX 信号量，见 `firmware/Core/Src/main.c`）。这是 SIL 里验证过的逻辑，真机上还没跑过。
 
@@ -25,10 +25,12 @@
 
 ## M1：单轮开环与编码器
 
-1. 先只接一个电机，依次测试 `+20% / 0 / -20%` PWM。
-2. 逻辑分析仪观察编码器 A/B 相，确认相位、方向和计数倍频。
+1. ~~先只接一个电机测试 PWM~~ —— 已完成，先单独验证 FL，再四轮同测。
+2. ~~确认编码器相位、方向~~ —— 已完成（2026-08-23，`encoder_debug`）：抬起底盘 40% 占空比跑 1.5 秒，四路计数 FL 631 / FR 633 / RL 640 / RR 619，全为正且整车物理前进，一致性约 3%。期间修正两处：`motor_set_tim()` 方向引脚按 (AIN2, AIN1) 传入使"正占空比 = 前进"；对调 FL 编码器 A/B 两线统一计数符号。计数倍频未做（当前只用上升沿单边沿触发）。
 3. 测量 10%、20%……80% 占空比下的稳态转速，得到死区和近似 `PWM -> rad/s` 曲线。
 4. 连续记录时间戳、目标速度、实测速度、PWM 和编码器增量。
+
+尚缺的换算基准：电机减速比、编码器每转脉冲数、轮径都还没实测确认，`encoder.h` 里 `ENCODER_CPR 11` / `GEAR_RATIO 34` 目前是估值注释（"may vary, measure"），换算成 rad/s 之前必须核实，否则 PID 调出来的参数没有物理意义。
 
 通过条件：正向 PWM 对应正向转速；重复三次的稳态转速偏差可解释；堵转能立即停机。
 

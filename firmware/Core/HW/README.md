@@ -18,6 +18,7 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `three_motors_debug` | FL + FR + RL forward/reverse | pass, 4,392 + 12 + 1,756 = 6,160 |
 | `four_motors_debug` | FL + FR + RL + RR forward/reverse | pass, 4,376 + 12 + 1,756 = 6,144 |
 | `drive_control` | four-wheel drive command demo | pass, 4,672 + 16 + 1,856 = 6,544 |
+| `encoder_debug` | four-wheel drive + software quadrature decode | pass, 5,108 + 16 + 1,888 = 7,012 |
 
 The host SIL regression was also rebuilt and passed with CTest: 5/5
 (`sil_firmware_ci`, PID, mecanum IK, AHRS, and remote-control tests).
@@ -32,14 +33,49 @@ Hardware verification completed during the same bring-up sequence:
   70% PWM demo runs forward, left translation, and counter-clockwise rotation,
   then disables both TB6612 bridges.
 
-This proves the open-loop GPIO/PWM/bridge mapping only. Encoder inputs,
-speed feedback, PID, UART control, battery operation, and on-ground motion
-remain unverified.
+Encoder bring-up followed (2026-08-23, chassis lifted, 40% duty for 1.5s,
+`encoder_debug`): all four channels decode, counting positive while the
+robot drives physically forward — FL 631, FR 633, RL 640, RR 619, a ~3%
+spread across wheels. Two calibration fixes were needed to get there:
+
+- **DIR polarity.** A positive duty drove the chassis *backwards* on all
+  four wheels. Fixed by passing each motor's DIR pins to `motor_set_tim()`
+  in (AIN2, AIN1) order, so `positive duty == forward` holds for every
+  caller rather than pushing sign flips up into kinematics/PID/teleop.
+- **FL encoder phase.** FL counted negative while the other three counted
+  positive for the same physical direction; its two encoder wires were
+  swapped in the harness.
+
+All four motors are driven from TIM2/3/4 PWM, so no timer remains for
+STM32 hardware encoder mode (TIM1's encoder channels sit on PA8/PA9,
+taken by NRF24L01 CE and USART1). All four encoders therefore use
+software EXTI decode — see the header comment in `encoder_debug_main.c`
+for the EXTI line allocation and why RL uses PB7 rather than PB6.
+
+This proves open-loop GPIO/PWM/bridge mapping plus encoder direction and
+counting. Speed feedback in engineering units, PID, UART control, battery
+operation, and on-ground motion remain unverified.
+
+**Measuring these counters:** `st-util` resets the target both on start
+and when GDB attaches, so halting right after attach samples a chip that
+restarted milliseconds earlier — still inside the 2s startup delay, which
+reads as "encoders stuck at zero while the wheels visibly spin". Let it
+free-run first, then interrupt:
+
+```sh
+arm-none-eabi-gdb -q --batch \
+  -ex "target extended-remote localhost:4242" \
+  -ex "continue" \
+  -ex "print fl_count" -ex "print fr_count" \
+  -ex "print rl_count" -ex "print rr_count" \
+  encoder_debug.elf > /tmp/gdb.log 2>&1 &
+sleep 8; kill -INT %1; sleep 2; grep '^\$' /tmp/gdb.log
+```
 
 ## Build all verified targets
 
-Run from this directory. `drive_control` alone links the production
-`motor.c` implementation.
+Run from this directory. `drive_control` and `encoder_debug` link the
+production `motor.c` implementation; the rest drive registers directly.
 
 ```sh
 for target in bringup fl_motor_debug fr_motor_debug front_motors_debug \
@@ -48,8 +84,12 @@ for target in bringup fl_motor_debug fr_motor_debug front_motors_debug \
   make TARGET="$target"
 done
 
+# These two link the production motor.c implementation.
 make clean
 make TARGET=drive_control EXTRA_SRCS='../Src/motor.c'
+
+make clean
+make TARGET=encoder_debug EXTRA_SRCS='../Src/motor.c'
 ```
 
 ## Target overview

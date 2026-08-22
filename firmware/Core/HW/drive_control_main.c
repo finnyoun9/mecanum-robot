@@ -167,10 +167,17 @@ static void drive_hardware_init(void) {
     pwm_channel_config(&htim3, TIM_CHANNEL_3);
     pwm_channel_config(&htim4, TIM_CHANNEL_3);
 
-    motor_set_tim(MOTOR_FL, &htim2, GPIOA, GPIO_PIN_4, GPIOA, GPIO_PIN_5, TIM_CHANNEL_3);
-    motor_set_tim(MOTOR_FR, &htim3, GPIOA, GPIO_PIN_11, GPIOA, GPIO_PIN_12, TIM_CHANNEL_3);
-    motor_set_tim(MOTOR_RL, &htim4, GPIOB, GPIO_PIN_1, GPIOB, GPIO_PIN_15, TIM_CHANNEL_3);
-    motor_set_tim(MOTOR_RR, &htim2, GPIOC, GPIO_PIN_13, GPIOC, GPIO_PIN_14, TIM_CHANNEL_4);
+    /* DIR pin pairs are passed (AIN2, AIN1) — i.e. swapped relative to the
+     * silkscreen order — because with the natural (AIN1, AIN2) order the
+     * whole chassis drove backwards for a positive duty (verified on
+     * hardware 2026-08-23, all four wheels consistently reversed).
+     * Correcting it here, at the single place pins are bound, keeps
+     * "positive duty == forward" true for every caller, instead of pushing
+     * sign flips into the kinematics/PID/teleop layers. */
+    motor_set_tim(MOTOR_FL, &htim2, GPIOA, GPIO_PIN_5, GPIOA, GPIO_PIN_4, TIM_CHANNEL_3);
+    motor_set_tim(MOTOR_FR, &htim3, GPIOA, GPIO_PIN_12, GPIOA, GPIO_PIN_11, TIM_CHANNEL_3);
+    motor_set_tim(MOTOR_RL, &htim4, GPIOB, GPIO_PIN_15, GPIOB, GPIO_PIN_1, TIM_CHANNEL_3);
+    motor_set_tim(MOTOR_RR, &htim2, GPIOC, GPIO_PIN_14, GPIOC, GPIO_PIN_13, TIM_CHANNEL_4);
     motor_init();
     drive_stop();
 }
