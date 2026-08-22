@@ -12,8 +12,12 @@
  */
 
 #include "motor.h"
+#ifdef STM32F103xB
+#include "stm32f1xx_hal.h"
+#else
 #include "tim.h"
 #include "gpio.h"
+#endif
 #include <stddef.h>
 
 /* --- Replace with actual HAL includes in real project --- */

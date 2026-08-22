@@ -15,7 +15,10 @@ CC      = $(TOOLCHAIN)/arm-none-eabi-gcc
 OBJCOPY = $(TOOLCHAIN)/arm-none-eabi-objcopy
 SIZE    = $(TOOLCHAIN)/arm-none-eabi-size
 
-TARGET = bringup
+TARGET ?= bringup
+EXTRA_SRCS ?=
+OPENOCD ?= openocd
+OPENOCD_CONFIG = stlink_stm32f1.cfg
 
 ROOT       = ..
 DRIVERS    = $(ROOT)/Drivers
@@ -25,14 +28,15 @@ HAL_INC    = $(DRIVERS)/STM32F1xx_HAL_Driver/Inc
 HAL_SRC    = $(DRIVERS)/STM32F1xx_HAL_Driver/Src
 
 CFLAGS  = -mcpu=cortex-m3 -mthumb
-CFLAGS += -Os -g -Wall -fdata-sections -ffunction-sections
+CFLAGS += -Os -g -Wall -Werror -fdata-sections -ffunction-sections
 CFLAGS += -DSTM32F103xB -DUSE_HAL_DRIVER
 CFLAGS += -I. -I$(ROOT)/Inc -I$(CMSIS_INC) -I$(CMSIS_DEV) -I$(HAL_INC)
 
 LDFLAGS  = -mcpu=cortex-m3 -mthumb -T STM32F103XB_FLASH.ld
 LDFLAGS += -Wl,--gc-sections -nostartfiles -specs=nosys.specs -lc -lm
 
-C_SRCS  = bringup_main.c stm32f1xx_it_bringup.c system_clock_config.c
+C_SRCS  = $(TARGET)_main.c stm32f1xx_it_bringup.c system_clock_config.c
+C_SRCS += $(EXTRA_SRCS)
 C_SRCS += $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx/system_stm32f1xx.c
 C_SRCS += $(wildcard $(HAL_SRC)/*.c)
 
@@ -41,9 +45,9 @@ ASM_SRCS = startup_stm32f103xb.s
 OBJS  = $(notdir $(C_SRCS:.c=.o))
 OBJS += $(ASM_SRCS:.s=.o)
 
-vpath %.c . $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx $(HAL_SRC)
+vpath %.c . $(ROOT)/Src $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx $(HAL_SRC)
 
-.PHONY: all clean flash
+.PHONY: all clean flash debug-server
 
 all: $(TARGET).bin
 
@@ -61,7 +65,10 @@ $(TARGET).bin: $(TARGET).elf
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 flash: $(TARGET).bin
-	st-flash --reset write $(TARGET).bin 0x08000000
+	$(OPENOCD) -f $(OPENOCD_CONFIG) -c "program $(TARGET).elf verify reset exit"
+
+debug-server:
+	$(OPENOCD) -f $(OPENOCD_CONFIG)
 
 clean:
 	rm -f *.o *.elf *.bin
