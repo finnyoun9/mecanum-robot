@@ -22,8 +22,11 @@ ros2_ws/log/
 *~
 
 # STM32
-firmware/Drivers/
-firmware/Middleware/
+# firmware/Core/Drivers, firmware/Core/Middleware ARE committed (not
+# ignored): there's no CubeMX .ioc in this project, so unlike a typical
+# CubeMX-generated tree, vendored HAL/CMSIS/FreeRTOS can't be regenerated
+# on clone. The *.o/*.elf/*.bin patterns above already cover firmware/Core/HW's
+# build output.
 *.ioc
 *.mxproject
 
