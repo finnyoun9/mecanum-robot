@@ -30,6 +30,7 @@ The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**.
 - **NRF24L01 无线遥控** 🚧 — 接收驱动、摇杆映射、C 版逆运动学和 CI 单测已完成，待实物收发与电机联调(见 [docs/remote_control.md](docs/remote_control.md))
 - **ROS2 协议闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → STM32 UART 模拟器全链路打通；0.3 m/s 指令在协议模拟中得到 0.302 m/s 里程计，尚不是真实底盘结果
 - **STM32 FreeRTOS 固件** 🚧 — 4 路 PID 速度闭环框架已在 `firmware/`,真机联调待接线
+- **四轮开环真机控制** ✅ — 四个电机经 TB6612 已完成 6 V 空载正反转与方向一致性验证；正式供电方案见 [docs/power-system.md](docs/power-system.md)
 - **SIL 软件在环测试** ✅ — 固件编译为 Linux 原生可执行文件，Mock HAL + FreeRTOS 调度模拟器在 CI 中验证命令解析、PWM、编码器累积和里程计数据链；不替代真机 PID 性能测试(见 [docs/resume-highlights.md](docs/resume-highlights.md))
 - **Nav2 + SLAM** 🚧 — 配置骨架已就位,待与里程计/激光数据联调
 
@@ -126,6 +127,8 @@ mecanum-robot/
 | 相机 Camera | 树莓派摄像头模块 (CSI 排线) | 1 |
 | 无线遥控 Remote | NRF24L01+ 收发模块 + 江协科技手柄 | 2 |
 | 电源 Power | 3S 锂电池 + 降压模块 | 1 套 |
+
+当前实装的电源树、降压模块分工和首次上电检查见 [供电方案](docs/power-system.md)。
 
 ### 2. Pi 5 Setup / 树莓派 5 环境搭建
 
