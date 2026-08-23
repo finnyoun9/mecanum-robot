@@ -9,7 +9,8 @@ a serial device; this script owns the master end and plays the firmware:
 
   * parses incoming frames (CMD_VEL_CTRL / CMD_EMERGENCY_STOP /
     CMD_HEARTBEAT / CMD_PID_TUNE)
-  * integrates the 4 commanded wheel angular velocities into encoder counts
+  * applies a measured deadband and speed limit before integrating modeled
+    wheel angular velocities into encoder counts
   * publishes CMD_ODOM_FEEDBACK at 50 Hz with a virtual IMU (yaw integrates
     the wheel-derived omega) so the robot_localization EKF can rotate the
     robot on angular commands
@@ -21,6 +22,7 @@ Usage:
 """
 
 import fcntl
+import math
 import os
 import pty
 import struct
@@ -49,6 +51,25 @@ EDGES_PER_WHEEL_REV = 448
 ODOM_HZ = 50          # odometry publish rate
 SIM_DT = 0.02         # sim step (20 ms)
 
+# Chassis-lifted measurements from the 2026-08-23 duty sweep at the DP100
+# bench-supply voltage, not battery-supply limits. The 20%-80% linear region
+# extrapolates to 4.27 wheel rev/s at full duty. Re-measure these after moving
+# to the 3S battery because motor speed scales approximately with supply
+# voltage.
+MAX_WHEEL_RPS = 4.27
+MAX_WHEEL_RAD_S = MAX_WHEEL_RPS * 2.0 * math.pi
+
+# 5% duty did not move any wheel; 10% did, at 0.32 wheel rev/s. The exact
+# static-friction threshold was not measured between those points, so this is
+# a conservative deadband derived from the lowest confirmed moving point, not
+# a directly measured command-speed threshold.
+MIN_START_WHEEL_RPS = 0.32
+MIN_START_WHEEL_RAD_S = MIN_START_WHEEL_RPS * 2.0 * math.pi
+
+# The outer wheel diameter was measured as 60 mm. Keep this consistent with
+# mcr_hardware_interface.cpp instead of the former 0.0325 m estimate.
+WHEEL_RADIUS_M = 0.030
+
 
 # --- CRC-16/MODBUS (same table + algorithm as shared/protocol.c) ---
 def crc16(data: bytes) -> int:
@@ -76,8 +97,9 @@ class Stm32Sim:
     def __init__(self, master_fd: int):
         self.master = master_fd
         self.rx_buf = b""
-        self.wheel_w = [0.0, 0.0, 0.0, 0.0]   # commanded wheel speed (rad/s)
+        self.commanded_w = [0.0, 0.0, 0.0, 0.0]  # requested wheel speed (rad/s)
         self.counts = [0, 0, 0, 0]            # accumulated encoder edges
+        self.count_residual = [0.0, 0.0, 0.0, 0.0]
         self.yaw = 0.0                        # virtual IMU heading (rad)
         self.gyro_z = 0.0
         self.seq_tx = 0
@@ -127,12 +149,12 @@ class Stm32Sim:
 
     def handle(self, cmd: int, payload: bytes, seq: int):
         if cmd == CMD_VEL_CTRL and len(payload) == 16:
-            self.wheel_w = list(struct.unpack("<4f", payload))
+            self.commanded_w = list(struct.unpack("<4f", payload))
             self.stopped = False
             print("[sim] VEL seq=%d w=[%.3f %.3f %.3f %.3f]" %
-                  (seq, *self.wheel_w), flush=True)
+                  (seq, *self.commanded_w), flush=True)
         elif cmd == CMD_EMERGENCY_STOP:
-            self.wheel_w = [0.0] * 4
+            self.commanded_w = [0.0] * 4
             self.stopped = True
         elif cmd == CMD_HEARTBEAT:
             self._send(CMD_ACK, b"")
@@ -148,15 +170,33 @@ class Stm32Sim:
         except OSError:
             pass
 
-    def send_odometry(self):
-        # Integrate wheel speeds -> encoder edges
-        for i in range(4):
-            self.counts[i] += int(self.wheel_w[i] / (2.0 * 3.141592653589793)
-                                  * EDGES_PER_WHEEL_REV * SIM_DT)
+    @staticmethod
+    def modeled_wheel_speed(command_w: float) -> float:
+        """Map a requested wheel speed to the measured bench-supply envelope.
 
-        # Wheel-derived twist (mecanum forward kin, matches C++ class)
-        r, l = 0.0325, 0.10 + 0.12
-        w1, w2, w3, w4 = self.wheel_w
+        This is intentionally a static model: no time constant was measured,
+        so adding one would be an unsupported estimate.
+        """
+        magnitude = abs(command_w)
+        if magnitude < MIN_START_WHEEL_RAD_S:
+            return 0.0
+        return math.copysign(min(magnitude, MAX_WHEEL_RAD_S), command_w)
+
+    def send_odometry(self):
+        # Integrate modeled wheel speeds -> encoder edges. Keep fractional
+        # edges so the 50 Hz simulation does not introduce a low-speed bias.
+        modeled_w = [self.modeled_wheel_speed(w) for w in self.commanded_w]
+        for i in range(4):
+            edges = (modeled_w[i] / (2.0 * math.pi) *
+                     EDGES_PER_WHEEL_REV * SIM_DT + self.count_residual[i])
+            delta = math.trunc(edges)
+            self.count_residual[i] = edges - delta
+            self.counts[i] += delta
+
+        # Wheel-derived twist (mecanum forward kin). lx/ly remain estimated;
+        # see mcr_hardware_interface.cpp and the closed-loop roadmap.
+        r, l = WHEEL_RADIUS_M, 0.10 + 0.12
+        w1, w2, w3, w4 = modeled_w
         omega = (-w1 + w2 - w3 + w4) * r / (4.0 * l)
         vx = (w1 + w2 + w3 + w4) * r * 0.25
 

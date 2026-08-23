@@ -61,3 +61,11 @@
 ## 完成后
 
 在 [agent-handoff.md](agent-handoff.md) 的"当前真实状态"里更新你改变的部分，并确认两个 CI workflow 都是绿的。
+
+- [x] **T1**：`Stm32Sim` 现在以 DP100 台面供电实测曲线推导的 4.27 rev/s 上限和
+      0.32 rev/s 保守启动阈值约束计数、虚拟 IMU；同步修正模拟器轮半径为实测 0.030 m。
+      验证：`python3 tools/test_stm32_uart_sim.py`（3 项通过）和
+      `python3 -m py_compile tools/stm32_uart_sim.py tools/test_stm32_uart_sim.py`。
+      本机无 Docker，未能在 `mcr-ros2` 容器中运行 `tools/verify_sil.sh`；待 CI/容器环境复核。
+- [ ] T2 完成并 push，更新 agent-handoff——写明已加的常数守卫。
+- [ ] T3 完成并 push，更新 agent-handoff + hardware-closed-loop-roadmap。
