@@ -8,28 +8,59 @@ on:
 
 jobs:
   build-and-test:
-    # Jazzy targets Ubuntu 24.04 (Noble).
     runs-on: ubuntu-24.04
+
+    # Build inside the same base image docker/Dockerfile uses, so CI and
+    # local development resolve identical ROS 2 packages.
+    #
+    # This replaced ros-tooling/setup-ros + action-ros-ci, which failed
+    # intermittently (roughly 5 of 12 runs) with "ModuleNotFoundError: No
+    # module named 'ament_package'" during CMake configure — the deb was
+    # installed every time, so the ROS environment simply wasn't visible to
+    # the build. Failures tracked no change in the repo: doc-only commits
+    # failed while ROS 2 code changes passed. Constant false alarms are
+    # worse than no CI, because they train you to ignore the mail — that is
+    # how the firmware-tests workflow stayed red for nine days unnoticed.
+    # A container fixes the environment instead of hoping the action sets
+    # it up correctly this run.
+    container:
+      image: ros:jazzy-ros-base
 
     steps:
       - uses: actions/checkout@v4
 
-      # NOTE: action versions below are recent tags as of writing (2026-08).
-      # If CI fails to resolve them, check ros-tooling/setup-ros and
-      # ros-tooling/action-ros-ci for the latest release tags and bump.
-      - name: Setup ROS 2 Jazzy
-        uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: jazzy
+      # Mirrors docker/Dockerfile's dependency list. Keep the two in sync:
+      # a package added there is needed here too.
+      - name: Install ROS 2 dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ros-jazzy-ros2-control \
+            ros-jazzy-ros2-controllers \
+            ros-jazzy-robot-localization \
+            ros-jazzy-slam-toolbox \
+            ros-jazzy-navigation2 \
+            ros-jazzy-nav2-bringup \
+            ros-jazzy-xacro \
+            ros-jazzy-robot-state-publisher \
+            ros-jazzy-joint-state-publisher \
+            ros-jazzy-teleop-twist-keyboard \
+            python3-colcon-common-extensions \
+            build-essential
 
-      # action-ros-ci runs colcon build then colcon test by default, which
-      # picks up the gtest suite (test_mecanum_kinematics) registered in
-      # mcr_bringup/CMakeLists.txt.
-      - name: Build and test mcr_bringup, mcr_description, mcr_navigation
-        uses: ros-tooling/action-ros-ci@v0.3
-        with:
-          target-ros2-distro: jazzy
-          package-name: |
-            mcr_bringup
-            mcr_description
-            mcr_navigation
+      # `run:` steps bypass the image entrypoint, so the overlay has to be
+      # sourced explicitly in each one.
+      - name: Build
+        working-directory: ros2_ws
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          colcon build --event-handlers console_direct+
+
+      # colcon test exits 0 even when tests fail; colcon test-result
+      # --verbose is what actually fails the job on a failing test.
+      - name: Test
+        working-directory: ros2_ws
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          colcon test --event-handlers console_direct+
+          colcon test-result --verbose
