@@ -148,17 +148,13 @@ int main(int argc, char **argv) {
     printf("=== MCR Firmware SIL Test ===\n");
 
     /* --- 1. Wire mock peripherals before robot_init() ---
-     *     encoder_init() preserves htim pointers set by encoder_set_tim(),
-     *     and motor_init() finds the htim handles to start PWM. */
+     *     motor_init() finds the htim handles to start PWM. Encoders need
+     *     no wiring: they are software-decoded, driven by encoder_on_edge()
+     *     from the plant model below. */
     motor_set_tim(MOTOR_FL, &mock_tim2, &mock_gpioa, GPIO_PIN_4, &mock_gpioa, GPIO_PIN_5, TIM_CHANNEL_1);
     motor_set_tim(MOTOR_FR, &mock_tim3, &mock_gpioa, GPIO_PIN_11, &mock_gpioa, GPIO_PIN_12, TIM_CHANNEL_1);
     motor_set_tim(MOTOR_RL, &mock_tim4, &mock_gpiob, GPIO_PIN_1, &mock_gpiob, GPIO_PIN_15, TIM_CHANNEL_1);
     motor_set_tim(MOTOR_RR, &mock_tim5, &mock_gpioc, GPIO_PIN_13, &mock_gpioc, GPIO_PIN_14, TIM_CHANNEL_1);
-
-    encoder_set_tim(MOTOR_FL, &mock_tim2);
-    encoder_set_tim(MOTOR_FR, &mock_tim3);
-    encoder_set_tim(MOTOR_RL, &mock_tim4);
-    encoder_set_tim(MOTOR_RR, &mock_tim5);
 
     printf("[SIL] Wired motors FL→TIM2, FR→TIM3, RL→TIM4, RR→TIM5\n");
 
@@ -202,7 +198,10 @@ int main(int argc, char **argv) {
         /* Advance mock time and run all tasks cooperatively */
         sil_sched_tick();
 
-        /* --- Encoder model: integrate PWM → encoder counts --- */
+        /* --- Plant model: PWM duty → encoder edges ---
+         * Edges are delivered through encoder_on_edge(), the same entry
+         * point the EXTI ISR uses on hardware, so SIL exercises the real
+         * decode path rather than writing counts in behind it. */
         int16_t pwm[4];
         read_pwm(pwm);
         for (int m = 0; m < 4; m++) {
@@ -213,9 +212,13 @@ int main(int argc, char **argv) {
             case MOTOR_RL: tim = &mock_tim4; break;
             case MOTOR_RR: tim = &mock_tim5; break;
             }
-            if (tim && tim->pwm_started) {
-                mock_encoder_integrate(tim, pwm[m], 1,
-                                       EDGES_PER_WHEEL_REV);
+            if (!tim || !tim->pwm_started) continue;
+
+            int16_t edges = mock_encoder_edges(m, pwm[m], 1,
+                                               EDGES_PER_WHEEL_REV);
+            const bool forward = (edges >= 0);
+            for (int16_t e = 0; e < (forward ? edges : (int16_t)-edges); e++) {
+                encoder_on_edge((motor_id_t)m, forward);
             }
         }
     }

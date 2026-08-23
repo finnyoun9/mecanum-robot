@@ -166,7 +166,13 @@ TB6612 每路电机的方向由 **两个输入脚**共同决定（真值表）�
 
 ### 编码器解码固件状态
 
-四路 EXTI 软件正交解码已实现并在真机验证通过，见 [`firmware/Core/HW/encoder_debug_main.c`](../firmware/Core/HW/encoder_debug_main.c) 和 [`firmware/Core/HW/README.md`](../firmware/Core/HW/README.md)。注意这是独立的裸机验证程序，**尚未合并进 `encoder.c`**——`encoder.c` 目前仍写的是硬件定时器编码器模式（`HAL_TIM_Encoder_Start` / `__HAL_TIM_GET_COUNTER`），按上面说明那条路走不通，接入 FreeRTOS 应用前需要改成软件解码。
+四路 EXTI 软件正交解码**已合入生产代码** `firmware/Core/Src/encoder.c`（2026-08-23），原先的硬件定时器编码器模式已移除。
+
+解码逻辑集中在单个入口 `encoder_on_edge(motor_id_t, bool b_level)`：真机由 EXTI 中断服务程序调用，主机单元测试和 SIL 直接调用同一个函数——这样解码逻辑可以脱离硬件测试，也保证 SIL 跑的是真实代码路径而不是绕过它写计数。
+
+板级的 GPIO/EXTI 配置不属于 `encoder.c`，由各自的 board init 负责（参考 `firmware/Core/HW/encoder_port_check_main.c`）。
+
+验证情况：主机单元测试 7 项（`firmware/Core/Test/test_encoder.c`，含方向、隔离、越界、复位、rad/s 换算）；真机 `encoder_port_check` 链接生产 `encoder.c` 实测 40% 占空比下 `encoder_get_speed_rads()` 返回 10.24–10.38 rad/s，与占空比扫频曲线预测的 10.25 rad/s 独立吻合。
 
 ---
 

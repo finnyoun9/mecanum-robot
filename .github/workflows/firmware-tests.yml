@@ -38,6 +38,11 @@ jobs:
         gcc -std=c11 -Wall -Wextra -I firmware/Core/Inc firmware/Core/Test/test_remote_control.c firmware/Core/Src/remote_control.c firmware/Core/Src/mecanum_ik.c -lm -o /tmp/test_remote_control
         /tmp/test_remote_control
 
+    - name: Run encoder tests
+      run: |
+        gcc -std=c11 -Wall -Wextra -I firmware/Core/Inc firmware/Core/Test/test_encoder.c firmware/Core/Src/encoder.c -lm -o /tmp/test_encoder
+        /tmp/test_encoder
+
     - name: SIL firmware build + test
       run: |
         mkdir -p firmware/Core/build

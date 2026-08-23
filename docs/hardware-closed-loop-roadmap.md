@@ -17,7 +17,7 @@
 
 1. ~~记录 STM32 型号、电机型号、TB6612 引脚和电源结构~~ —— 已确认：STM32F103C8T6、TB6612 ×2（裸露 AIN1/AIN2/BIN1/BIN2 引脚）、MPU6050，引脚表见 [docs/wiring.md](wiring.md#已确认引脚分配stm32f103c8t62026-08-21)。电机型号/减速比/编码器线数/轮径待补。
 2. ~~用万用表确认电机/逻辑电源、共地和短路；DP100 限流上电。~~ —— 已完成四轮 6 V 限流开环验证；正式电池供电改造按 [供电方案](power-system.md) 执行。
-3. ~~补齐真机可编译固件~~ —— 项目没有 CubeMX .ioc，手动 vendor 了官方 STM32Cube HAL/CMSIS/FreeRTOS（`firmware/Core/Drivers`、`firmware/Core/Middleware`），链接脚本/启动文件复用 `remote_controller` 已验证过的路径。`firmware/Core/HW/` 下的最小 bring-up（时钟 HSI+PLL@64MHz + GPIO 翻转）已编译、烧录、经 GDB 读寄存器验证在真机上运行。**这只证明了工具链**。此后 `firmware/Core/HW/` 下的裸机目标已验证四路电机开环驱动和四路编码器软件解码（见该目录 README），但 `encoder.c` 仍写的是走不通的硬件定时器编码器模式、`motor.c` 的引脚映射也还没落到真实值，整个 FreeRTOS 应用的外设 MSP 初始化（UART DMA、I2C）同样没接上，`firmware_arch_main()` 还不能在真机上跑。
+3. ~~补齐真机可编译固件~~ —— 项目没有 CubeMX .ioc，手动 vendor 了官方 STM32Cube HAL/CMSIS/FreeRTOS（`firmware/Core/Drivers`、`firmware/Core/Middleware`），链接脚本/启动文件复用 `remote_controller` 已验证过的路径。`firmware/Core/HW/` 下的最小 bring-up（时钟 HSI+PLL@64MHz + GPIO 翻转）已编译、烧录、经 GDB 读寄存器验证在真机上运行。**这只证明了工具链**。此后 `firmware/Core/HW/` 下的裸机目标已验证四路电机开环驱动和四路编码器软件解码（见该目录 README）。`encoder.c` 已于 2026-08-23 从走不通的硬件定时器模式移植为软件 EXTI 解码，并用 `encoder_port_check` 在真机上验证了生产代码本身。仍未接上的：`motor.c` 的引脚映射还没落到真实值（目前由各 HW target 在初始化时传入），以及 FreeRTOS 应用的外设 MSP 初始化（UART DMA、I2C），`firmware_arch_main()` 还不能在真机上跑。
 4. 明确急停默认态、通信超时和上电禁止误转策略。
 5. ~~完成真正的 UART DMA/IDLE~~ —— 已实现（DMA staging buffer 与软件 ring 分离，`HAL_UARTEx_RxEventCallback` 更新写指针，`HAL_UART_TxCpltCallback` 释放 TX 信号量，见 `firmware/Core/Src/main.c`）。这是 SIL 里验证过的逻辑，真机上还没跑过。
 

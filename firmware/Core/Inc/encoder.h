@@ -1,21 +1,25 @@
 /**
  * @file encoder.h
- * @brief Quadrature encoder reader using STM32 TIM hardware encoder mode.
+ * @brief Quadrature encoder counting via software decode of GPIO edges.
  *
- * Each motor encoder uses one general-purpose timer in encoder mode (TI1+TI2).
- * Requires 4 independent TIM channels for 4 motors.
+ * Not STM32 hardware encoder mode: TIM2/3/4 are all committed to motor PWM
+ * and TIM1's encoder inputs are taken by NRF24L01/USART1, so no timer is
+ * available. Each encoder instead interrupts on channel A's rising edge and
+ * reads channel B for direction. See docs/wiring.md for the pin and EXTI
+ * line allocation.
  *
- * Typical STM32F4 pin allocation (example — adjust per actual wiring):
- *   MOTOR_FL: TIM2  CH1/CH2  (PA0/PA1)
- *   MOTOR_FR: TIM3  CH1/CH2  (PA6/PA7)  or (PB4/PB5)
- *   MOTOR_RL: TIM4  CH1/CH2  (PB6/PB7)
- *   MOTOR_RR: TIM5  CH1/CH2  (PA0/PA1)  — check availability
+ * Wiring (channel A drives the interrupt, channel B is sampled):
+ *   MOTOR_FL: PA0  / PA1   (EXTI0)
+ *   MOTOR_FR: PA6  / PA7   (EXTI9_5)
+ *   MOTOR_RL: PB7  / PB6   (EXTI9_5)   — PB7 not PB6, avoids clashing with PA6
+ *   MOTOR_RR: PB12 / PB13  (EXTI15_10)
  */
 
 #ifndef ENCODER_H
 #define ENCODER_H
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "motor.h"
 
 /**
@@ -42,16 +46,30 @@
 #define WHEEL_DIAMETER_M 0.060f
 
 /**
- * @brief Initialise all 4 encoder TIM peripherals.
- * Configures TIM in encoder mode (TI1+TI2, 4x counting).
- * Call once after HAL_Init().
+ * @brief Zero all encoder counters.
+ *
+ * Does not touch any peripheral — GPIO and EXTI setup belongs to the
+ * board init code, which is what routes edges here via encoder_on_edge().
  */
 void encoder_init(void);
 
 /**
- * @brief Read raw timer counter value (cumulative edge count since init).
- * The counter is 16-bit (TIM->CNT); wraps are tracked internally
- * to provide a 32-bit cumulative value.
+ * @brief Record one encoder edge. Call from the channel-A EXTI handler.
+ *
+ * The single entry point for decoding; keeping it a plain function rather
+ * than inlining the logic in an ISR is what lets host tests and SIL drive
+ * it directly.
+ *
+ * @param id       Motor whose channel A just saw a rising edge
+ * @param b_level  Channel B's level at that instant — true counts up
+ */
+void encoder_on_edge(motor_id_t id, bool b_level);
+
+/**
+ * @brief Cumulative signed edge count since init/reset.
+ *
+ * Counts up for forward wheel rotation on all four wheels (calibrated in
+ * the harness, see docs/wiring.md).
  *
  * @param id Motor index
  * @return int32_t Cumulative encoder edge count
@@ -72,13 +90,5 @@ float encoder_get_speed_rads(motor_id_t id, uint32_t delta_ms);
  * @brief Reset cumulative count for all encoders to zero.
  */
 void encoder_reset_all(void);
-
-/**
- * @brief Wire an encoder to a TIM handle.
- *
- * In production this is driven by a static pin-mapping table; for SIL
- * testing it lets the test harness connect mock TIM handles at runtime.
- */
-void encoder_set_tim(motor_id_t id, void *htim);
 
 #endif /* ENCODER_H */

@@ -1,97 +1,89 @@
 /**
  * @file encoder.c
- * @brief Quadrature encoder driver via STM32 TIM hardware encoder mode.
+ * @brief Quadrature encoder counting via software decode of GPIO edges.
  *
- * Each motor encoder requires a general-purpose timer in encoder mode.
- * TIM->CNT auto-reloads at 0xFFFF; we track wrap events to extend to 32-bit.
+ * This file previously used the STM32 timer peripheral's hardware encoder
+ * mode. That is not usable on this board: TIM2/3/4 all generate motor PWM,
+ * and a timer's counter cannot simultaneously free-run for PWM and be
+ * clocked by external quadrature edges. TIM1's encoder inputs are on
+ * PA8/PA9, taken by NRF24L01 CE and USART1. With no timer left, all four
+ * encoders decode in software — see docs/wiring.md for the EXTI line
+ * allocation and firmware/Core/HW/encoder_debug_main.c for the bare-metal
+ * verification this was ported from.
+ *
+ * Counting is driven entirely by encoder_on_edge(), called from the EXTI
+ * ISR on hardware (and directly by host tests and SIL). Keeping the decode
+ * in one plain function, rather than inline in an ISR, is what makes it
+ * testable off-target.
+ *
+ * Resolution: channel A's rising edge only (1x), not 4x quadrature. The
+ * measured EDGES_PER_WHEEL_REV in encoder.h already reflects this.
  */
 
 #include "encoder.h"
-#include "tim.h"
 #include <string.h>
 
-/*
- * Example encoder TIM mapping:
- *   MOTOR_FL: TIM2  (16-bit, 4x counting on CH1+CH2)
- *   MOTOR_FR: TIM3
- *   MOTOR_RL: TIM4
- *   MOTOR_RR: TIM5
- */
+/* Written by encoder_on_edge() (ISR context on hardware), read by the
+ * control loop. int32_t is naturally aligned on Cortex-M3, so a read
+ * cannot tear against a concurrent write and no critical section is
+ * needed around plain reads of `count`. */
 typedef struct {
-    /* TIM_HandleTypeDef *htim; */   /* Uncomment when HAL headers available */
-    void *htim;                      /* Placeholder */
-    int32_t  accum;                  /* Accumulated wraps (extend 16→32 bit) */
-    uint16_t last_cnt;               /* Previous raw CNT for wrap detection */
-    int32_t  prev_count;             /* Previous cumulative for speed calc */
+    volatile int32_t count;       /* cumulative edges, signed by direction */
+    int32_t          prev_count;  /* snapshot for speed calc; task context only */
 } encoder_ctx_t;
 
 static encoder_ctx_t encoders[MOTOR_COUNT];
 
 void encoder_init(void) {
-    /* Save htim pointers before clearing — they may have been wired by
-     * encoder_set_tim() before robot_init() (needed for SIL testing). */
-    void *saved_htim[MOTOR_COUNT];
-    for (int i = 0; i < MOTOR_COUNT; i++) {
-        saved_htim[i] = encoders[i].htim;
-    }
-
     memset(encoders, 0, sizeof(encoders));
+}
 
-    for (int i = 0; i < MOTOR_COUNT; i++) {
-        encoders[i].htim = saved_htim[i];
-        if (encoders[i].htim) {
-            HAL_TIM_Encoder_Start((TIM_HandleTypeDef *)encoders[i].htim,
-                                  TIM_CHANNEL_ALL);
-        }
+void encoder_on_edge(motor_id_t id, bool b_level) {
+    if (id >= MOTOR_COUNT) return;
+
+    /* Called on channel A's rising edge, so channel B's level at this
+     * instant gives the direction unambiguously: B high means one way,
+     * B low the other. (A both-edge scheme could not use B alone — B
+     * flips between A's rising and falling edges — but this is 1x.)
+     *
+     * Which physical direction maps to positive is set by the harness:
+     * all four wheels were wired/adjusted so forward travel counts up.
+     * See docs/wiring.md, "编码器方向校准结果". */
+    if (b_level) {
+        encoders[id].count++;
+    } else {
+        encoders[id].count--;
     }
 }
 
 int32_t encoder_get_count(motor_id_t id) {
     if (id >= MOTOR_COUNT) return 0;
-
-    encoder_ctx_t *e = &encoders[id];
-    if (!e->htim) return 0;
-
-    uint16_t raw = __HAL_TIM_GET_COUNTER((TIM_HandleTypeDef *)e->htim);
-
-    /* Detect 16-bit wrap (TIM counts UP in encoder mode by default) */
-    int16_t delta = (int16_t)(raw - e->last_cnt);
-    e->accum += delta;
-    e->last_cnt = raw;
-
-    return e->accum;
+    return encoders[id].count;
 }
 
 float encoder_get_speed_rads(motor_id_t id, uint32_t delta_ms) {
     if (id >= MOTOR_COUNT || delta_ms == 0) return 0.0f;
 
     encoder_ctx_t *e = &encoders[id];
-    int32_t count = encoder_get_count(id);
+    int32_t count = e->count;                 /* single read; see struct note */
     int32_t delta_edges = count - e->prev_count;
     e->prev_count = count;
 
-    /* Convert edges → wheel radians:
+    /* edges → wheel radians:
      *   edges / EDGES_PER_WHEEL_REV = wheel revolutions
-     *   wheel_rev * 2π = radians
-     *   / (delta_ms / 1000.0) = rad/s
+     *   revolutions * 2π            = radians
+     *   / (delta_ms / 1000)         = rad/s
      */
     float revs  = (float)delta_edges / (float)EDGES_PER_WHEEL_REV;
     float rads  = revs * 6.283185307f;
-    float speed = rads / (delta_ms * 0.001f);
+    float speed = rads / ((float)delta_ms * 0.001f);
 
     return speed;
 }
 
 void encoder_reset_all(void) {
     for (int i = 0; i < MOTOR_COUNT; i++) {
-        encoders[i].accum      = 0;
-        encoders[i].last_cnt   = 0;
+        encoders[i].count      = 0;
         encoders[i].prev_count = 0;
-    }
-}
-
-void encoder_set_tim(motor_id_t id, void *htim) {
-    if (id < MOTOR_COUNT) {
-        encoders[id].htim = htim;
     }
 }

@@ -75,12 +75,20 @@ if(BUILD_TESTING)
     add_executable(test_ahrs          Test/test_ahrs.c          Src/ahrs.c)
     add_executable(test_remote_control Test/test_remote_control.c
                    Src/remote_control.c Src/mecanum_ik.c)
+    add_executable(test_encoder       Test/test_encoder.c       Src/encoder.c)
 
-    foreach(host_test test_pid test_mecanum_ik test_ahrs test_remote_control)
+    foreach(host_test test_pid test_mecanum_ik test_ahrs test_remote_control
+                      test_encoder)
         target_include_directories(${host_test} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Inc)
+        # -UNDEBUG keeps assert() live regardless of CMAKE_BUILD_TYPE.
+        # Release adds -DNDEBUG, which compiles every assert away — these
+        # tests assert almost exclusively, so without this they would
+        # verify nothing while still reporting success. It also broke the
+        # build outright: with the asserts gone their operands become
+        # unused variables, which -Werror rejects.
         target_compile_options(${host_test} PRIVATE
-            -Wall -Wextra -Werror -std=c11)
+            -Wall -Wextra -Werror -std=c11 -UNDEBUG)
         target_link_libraries(${host_test} PRIVATE m)
         add_test(NAME ${host_test} COMMAND ${host_test})
     endforeach()

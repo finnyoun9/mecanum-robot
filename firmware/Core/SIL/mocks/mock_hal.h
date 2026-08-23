@@ -78,11 +78,13 @@ void mock_uart_rx_byte(uint8_t b);
 /** Read a byte from the mock UART TX ring. Returns true if data available. */
 bool mock_uart_tx_byte(uint8_t *b);
 
-/** Advance the mock encoder by converting a PWM duty cycle to edges.
- *  duty is -1000..+1000; a positive duty drives the counter up.
- *  Returns the raw CNT value after integration. */
-uint16_t mock_encoder_integrate(mock_tim_t *tim, int16_t duty,
-                                 uint32_t dt_ms, uint16_t edges_per_rev);
+/** Plant model: how many encoder edges this motor produces in one tick.
+ *  duty is -1000..+1000; the sign of the return value follows it.
+ *  Feed the result to encoder_on_edge() rather than to a counter, so the
+ *  firmware's real decode path is exercised.
+ *  @param motor_idx 0..3, matching motor_id_t */
+int16_t mock_encoder_edges(int motor_idx, int16_t duty,
+                           uint32_t dt_ms, uint16_t edges_per_rev);
 
 #ifdef __cplusplus
 }

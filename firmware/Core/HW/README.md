@@ -19,9 +19,12 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `four_motors_debug` | FL + FR + RL + RR forward/reverse | pass, 4,376 + 12 + 1,756 = 6,144 |
 | `drive_control` | four-wheel drive command demo | pass, 4,672 + 16 + 1,856 = 6,544 |
 | `encoder_debug` | four-wheel drive + software quadrature decode | pass, 5,108 + 16 + 1,888 = 7,012 |
+| `encoder_count` | passive counter, motors never driven | pass, 3,412 + 12 + 1,572 = 4,996 |
+| `duty_sweep` | duty -> speed curve across 10 levels | pass, 5,320 + 16 + 2,072 = 7,408 |
+| `encoder_port_check` | production encoder.c on hardware | pass, 6,544 + 16 + 1,936 = 8,496 |
 
-The host SIL regression was also rebuilt and passed with CTest: 5/5
-(`sil_firmware_ci`, PID, mecanum IK, AHRS, and remote-control tests).
+The host regression passes with CTest: 6/6 (`sil_firmware_ci`, PID,
+mecanum IK, AHRS, remote-control and encoder tests).
 
 Hardware verification completed during the same bring-up sequence:
 
@@ -52,9 +55,22 @@ taken by NRF24L01 CE and USART1). All four encoders therefore use
 software EXTI decode — see the header comment in `encoder_debug_main.c`
 for the EXTI line allocation and why RL uses PB7 rather than PB6.
 
-This proves open-loop GPIO/PWM/bridge mapping plus encoder direction and
-counting. Speed feedback in engineering units, PID, UART control, battery
-operation, and on-ground motion remain unverified.
+`duty_sweep` then measured the duty -> speed curve; results and analysis
+are in [docs/hardware-closed-loop-roadmap.md](../../../docs/hardware-closed-loop-roadmap.md).
+
+`encoder_port_check` closes the loop on the encoder.c port from
+hardware-timer mode to software decode. Unlike `encoder_debug`, which
+carried private counters, it links the production `../Src/encoder.c` and
+feeds it through `encoder_on_edge()` exactly as the FreeRTOS application
+will. Measured at 40% duty with the chassis lifted: counts
+{577, 577, 582, 565} and `encoder_get_speed_rads()` returning
+{10.24, 10.38, 10.38, 10.24} rad/s. That speed independently agrees with
+the 10.25 rad/s the duty sweep predicts for 40%, via a separate code path
+— evidence the edges-to-rad/s conversion is right, not just self-consistent.
+
+This proves open-loop GPIO/PWM/bridge mapping, encoder direction and
+counting, and speed feedback in engineering units. PID, UART control,
+battery operation, and on-ground motion remain unverified.
 
 **Measuring these counters:** `st-util` resets the target both on start
 and when GDB attaches, so halting right after attach samples a chip that
@@ -74,8 +90,9 @@ sleep 8; kill -INT %1; sleep 2; grep '^\$' /tmp/gdb.log
 
 ## Build all verified targets
 
-Run from this directory. `drive_control` and `encoder_debug` link the
-production `motor.c` implementation; the rest drive registers directly.
+Run from this directory. `encoder_port_check` links both production
+`motor.c` and `encoder.c`; `drive_control`, `encoder_debug` and
+`duty_sweep` link `motor.c` only; the rest drive registers directly.
 
 ```sh
 for target in bringup fl_motor_debug fr_motor_debug front_motors_debug \
@@ -84,12 +101,17 @@ for target in bringup fl_motor_debug fr_motor_debug front_motors_debug \
   make TARGET="$target"
 done
 
-# These two link the production motor.c implementation.
 make clean
-make TARGET=drive_control EXTRA_SRCS='../Src/motor.c'
+make TARGET=encoder_count
+
+# These link production implementations from ../Src.
+for target in drive_control encoder_debug duty_sweep; do
+  make clean
+  make TARGET="$target" EXTRA_SRCS='../Src/motor.c'
+done
 
 make clean
-make TARGET=encoder_debug EXTRA_SRCS='../Src/motor.c'
+make TARGET=encoder_port_check EXTRA_SRCS='../Src/motor.c ../Src/encoder.c'
 ```
 
 ## Target overview
