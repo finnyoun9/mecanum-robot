@@ -34,7 +34,7 @@ Claude 和 Codex 之间**没有直接消息通道**，唯一的协调媒介是 *
 
 ---
 
-## 当前真实状态（2026-08-23）
+## 当前真实状态（2026-08-24）
 
 ### 已实测（真机）
 
@@ -61,6 +61,8 @@ Claude 和 Codex 之间**没有直接消息通道**，唯一的协调媒介是 *
 
 - **M2 单轮速度 PI 调参**（进行中）。
 - 带载（落地）转速、堵转电流、阶跃响应指标。
+- `lx = 0.10 m`（半轴距）和 `ly = 0.12 m`（半轮距）仅为默认估计值，均未实测；
+  应量前后轮、左右轮的轴中心距后各除以 2，再替换 ROS 2 与模拟器中的默认值。
 - `firmware_arch_main()` **不能在真机跑**：缺 UART/I2C 的 MSP 初始化；`motor.c` 引脚映射目前由各 HW target 在初始化时传入，不是静态表。
 - NRF24L01、IMU、ToF、Nav2 均未上真机。
 - 机械臂：只有 host protocol 与 SIL 骨架，硬件缺货未到（智能总线舵机版），见 [manipulator/docs/decision-log.md](../manipulator/docs/decision-log.md)。

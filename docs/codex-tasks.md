@@ -71,4 +71,6 @@
       强制 `EDGES_PER_WHEEL_REV = 448`；`firmware-tests.yml` 已在 gcc/CMake 步骤前运行它。
       验证：从 `/tmp` 调用脚本通过；临时将 Python 常数改为 224 后脚本非零退出，恢复 448
       后再次通过；`python3 tools/test_stm32_uart_sim.py` 仍 3 项通过。
-- [ ] T3 完成并 push，更新 agent-handoff + hardware-closed-loop-roadmap。
+- [x] **T3**：在 ROS 2 默认 `lx/ly` 注释、M4 任务与验收条件、交接文档中明确二者
+      均为未实测估计值，并写明“量轮轴中心距、各除以 2”的替换方法。验证：`rg` 核对三处
+      均含未实测标注，`git diff --check` 通过；本项只改注释/文档，不涉及真机。

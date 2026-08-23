@@ -15,8 +15,8 @@ namespace mcr_bringup
 
 /* Defaults — override via URDF ros2_control xacro params */
 static constexpr double WHEEL_RADIUS_DEFAULT  = 0.030;    /* 30mm radius (60mm mecanum wheels, measured) */
-static constexpr double LX_DEFAULT            = 0.10;     /* Half wheelbase front-rear */
-static constexpr double LY_DEFAULT            = 0.12;     /* Half track-width left-right */
+static constexpr double LX_DEFAULT            = 0.10;     /* Estimated, not measured: front-rear wheel axle-center distance / 2. */
+static constexpr double LY_DEFAULT            = 0.12;     /* Estimated, not measured: left-right wheel axle-center distance / 2. */
 static constexpr int    SERIAL_BAUD_DEFAULT   = 921600;
 
 /* Encoder edges per wheel revolution — must match firmware encoder.h.
