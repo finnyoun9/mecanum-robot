@@ -1,44 +1,97 @@
-# Agent 交接：真实底盘闭环
+# Agent 交接与协作基线
 
-> 基线：2026-08-13。详细步骤见 [hardware-closed-loop-roadmap.md](hardware-closed-loop-roadmap.md)。
+> **最后更新：2026-08-23。** 改动了真机状态、固件结构或标定常数之后，**请同步更新本文档**——多个 agent（Claude / Codex）并行推进时，过时的基线会让另一方基于错误前提自信地做错事。
 
-## ⚠️ 2026-08-17：main / docs/hardware-mvp-roadmap 历史被重写过
+## 协作机制
 
-用 `git-filter-repo` 清理了全部 16 个提交里的 `Co-Authored-By: Claude` trailer，然后 force-push 覆盖了 `origin/main` 和 `origin/docs/hardware-mvp-roadmap`。**所有提交哈希都变了**。
+Claude 和 Codex 之间**没有直接消息通道**，唯一的协调媒介是 **git 仓库 + 本文档**。因此：
 
-任何其他机器/clone 上如果还留着旧历史，`git pull` 会冲突或产生重复提交。正确做法：
+- 开工前先 `git pull`，读本文档确认当前基线。
+- 完成一段工作后**及时 push**，并更新本文档中被你改变的事实。
+- 不确定某个结论是"已验证"还是"假设"时，看下方"证据分级"，不要默认它已验证。
 
-```bash
-git fetch origin
-git reset --hard origin/main   # 或对应分支
-```
+### 硬件是独占资源
 
-以后所有提交都不再加 Co-Authored-By trailer，这是用户的明确要求，不是遗漏。
+**ST-Link + 真车同一时间只能由一个 agent 操作。** 烧录、GDB 读写、电机上电都会互相打断（`st-util` 连接时会复位芯片）。
 
-## 当前真实状态
+- **需要真机的任务**：由当前持有硬件的一方独占，另一方不要碰 `firmware/Core/HW/` 的烧录流程。
+- **不需要真机的任务**可以并行：ROS 2 侧（`ros2_ws/`）、协议模拟器、主机单元测试、文档、Pi 侧集成。
 
-- 共享协议、运动学、ROS 2 接口、协议模拟闭环和两套 SIL 已有代码。
-- 独立机械臂仓库已通过 subtree 合入 `manipulator/`；后续只维护本仓库。
-- `firmware/Core/Src/motor.c` 的四路 TIM/GPIO 仍为 `NULL` 占位，真机速度闭环尚未开始。
-- UART DMA/IDLE、NRF24L01、IMU、ToF、Nav2 和机械臂舵机总线都不能按真机完成描述。
+当前硬件由 Claude 侧占用（M2 PID 调参中，DP100 台面供电、底盘抬起）。
 
-## 下一阶段只做三件事
+### 证据分级
 
-1. M0：确认 MCU、电机驱动、编码器、供电、引脚和安全默认态。
-2. M1：完成单轮开环，记录 PWM、rad/s、空载电流、死区和方向。
-3. M2：完成单轮速度 PI，输出阶跃 CSV、超调、建立时间、稳态误差和 IAE。
+写结论时区分清楚，这是本项目反复踩过的坑：
 
-四轮闭环与 Pi 5 HIL 必须等 M2 数据通过后再开始。
+| 级别 | 含义 | 例子 |
+| --- | --- | --- |
+| **实测** | 真机测量，有数据 | 224 edges/圈（转 10 圈 ×2） |
+| **SIL/单测验证** | 逻辑正确，非物理验证 | PID 数据链、协议编解码 |
+| **推导/估计** | 由其他数据算出，未验证 | SIL 里的 `max_wheel_rps 4.27` |
+| **假设** | 没有依据 | —— 不要写进文档 |
 
-## 软件基线与已知问题
+两次真实教训：`EDGES_PER_WHEEL_REV` 按厂商典型值推导，错了 6.7 倍；台面限流电源的 6V 被当成电机额定电压，导出一整套错误的供电架构（电机实为 12V 标称）。
 
-- 底盘 SIL 和机械臂 SIL 可构建，但 CMake 没有注册 CTest；当前需直接运行生成的可执行文件。
-- 底盘 SIL 有 `xLastWakeTime` 未使用警告。
-- 机械臂协议对 packed payload 成员直接取地址，有潜在非对齐访问警告，需要先复制到对齐缓冲区。
-- 复用 `stm32-pid-balancer` 前，先修它的 BACKCALC `Kp=0` 除零问题并补测试。
+---
+
+## 当前真实状态（2026-08-23）
+
+### 已实测（真机）
+
+- **主控** STM32F103C8T6（Blue Pill，**无 HSE 晶振**，HSI+PLL @ 64 MHz）。
+- **引脚映射**已确认并验证，见 [wiring.md](wiring.md)。
+- **四路电机开环驱动**：方向、PWM、STBY 全部验证。正占空比 = 前进（方向引脚按 (AIN2, AIN1) 传入修正）。
+- **四路编码器**：软件 EXTI 解码，计数与方向验证；FL 编码器 A/B 已在线束上对调以统一符号。
+- **标定常数**：`EDGES_PER_WHEEL_REV = 224`（实测）、轮径 60 mm / 半径 0.030 m。
+- **占空比→转速曲线**：20% 以上线性，斜率 ~0.986 edges/(duty·s)；启动死区 5%~10%；四轮一致性 2.8%；满占空比外推 ~4.27 rev/s ≈ 0.81 m/s。数据表见 [hardware-closed-loop-roadmap.md](hardware-closed-loop-roadmap.md)。
+  - ⚠️ 该曲线绑定 **DP100 台面供电电压**，换 3S 电池后需复测。
+
+### 已通过 SIL / 单元测试（非真机）
+
+- 共享协议（CRC16-MODBUS、帧同步）、麦克纳姆运动学、Mahony AHRS、遥控映射、PID 数据链。
+- CTest 6/6 通过；`firmware/arm_controller` SIL 24/24 通过。
+- UART DMA/IDLE 代码路径已实现（staging buffer 与软件 ring 分离），**真机未验证**。
+
+### 未做 / 未验证
+
+- **M2 单轮速度 PI 调参**（进行中）。
+- 带载（落地）转速、堵转电流、阶跃响应指标。
+- `firmware_arch_main()` **不能在真机跑**：缺 UART/I2C 的 MSP 初始化；`motor.c` 引脚映射目前由各 HW target 在初始化时传入，不是静态表。
+- NRF24L01、IMU、ToF、Nav2 均未上真机。
+- 机械臂：只有 host protocol 与 SIL 骨架，硬件缺货未到（智能总线舵机版），见 [manipulator/docs/decision-log.md](../manipulator/docs/decision-log.md)。
+
+---
+
+## 固件结构（容易走错的地方）
+
+- `firmware/Core/Src/` —— 生产代码，被 SIL、单元测试和真机目标共用。
+- `firmware/Core/HW/` —— **裸机验证目标，不启动 FreeRTOS**，每个 target 一个 `*_main.c`。构建方式和各 target 用途见该目录 [README](../firmware/Core/HW/README.md)。
+- `firmware/Core/SIL/` —— Linux 主机仿真，mock HAL + 轮询调度器。
+- **编码器不用硬件定时器**：TIM2/3/4 全部产生 PWM，TIM1 编码器脚被 NRF24/USART1 占用，四路全部软件 EXTI 解码。改这块前先读 `encoder.c` 顶部注释。
+
+### 读 GDB 变量的注意事项
+
+`st-util` 在**启动时和 GDB 连接时都会复位芯片**。连上就立刻 halt 读到的是刚复位几毫秒的状态（还停在启动延时里），会看起来像"编码器不计数但轮子在转"。正确做法是先 `continue` 让它自由跑够时间再打断，示例见 HW 目录 README。
+
+---
+
+## CI
+
+两个 workflow，推送后**请确认都变绿**（历史上 firmware-tests 红了 9 天没被发现）：
+
+- `firmware-tests.yml` —— gcc 直接编译各单测 + CMake/CTest + 两套 SIL。
+- `ros2-build.yml` —— 在 `ros:jazzy-ros-base` 容器里 colcon build/test，依赖清单与 `docker/Dockerfile` 保持一致（**改一处要同步另一处**）。
+
+主机单测目标带 `-UNDEBUG`：Release 会定义 `NDEBUG` 把 `assert()` 全部编译掉，测试会"通过"但什么都没验证。别去掉这个标志。
+
+---
 
 ## 简历红线
 
-- `0.302 m/s` 是协议模拟器结果，不是真实底盘。
-- 当前只能写“协议/运动学/SIL/CI 已验证，真机速度闭环进行中”。
-- 不写“四轮 PID 已上板”“DMA/IDLE 已验证”或“机械臂已完成”。
+- `0.302 m/s` 是**协议模拟器**结果，不是真实底盘。
+- 可以写：协议 / 运动学 / SIL / CI 已验证；真机开环驱动、编码器标定、占空比-转速曲线已实测。
+- **不要写**：四轮 PID 已上板、DMA/IDLE 已真机验证、机械臂已完成、任何带载或落地性能数字。
+
+## 提交约定
+
+不加 `Co-Authored-By` trailer（用户明确要求）。2026-08-17 曾用 `git-filter-repo` 重写全部历史清理该 trailer 并 force-push，旧 clone 需 `git fetch && git reset --hard origin/main`。
