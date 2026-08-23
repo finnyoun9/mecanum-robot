@@ -52,15 +52,20 @@ uint16_t mock_encoder_integrate(mock_tim_t *tim, int16_t duty,
     else return tim->cnt;
 
     float duty_frac = (float)duty / 1000.0f;
-    /* Rough plausibility figure for a JGA25-370 behind a ~1:20 gearbox at
-     * 12V — order-of-magnitude only, NOT a measured value; real RPM is
-     * still unmeasured (roadmap M1). It was 0.18 rev/s, which is ~11 RPM
-     * at the wheel and far too slow to be physical; that number existed to
-     * make counts visible back when EDGES_PER_WHEEL_REV was wrongly 1496.
-     * SIL asserts control-path logic (does a duty produce edges, do frames
-     * get published), never speed accuracy, so this only has to be in the
-     * right ballpark to keep the encoder assertion meaningful. */
-    float max_wheel_rps = 5.0f;        /* wheel rev/s at full duty */
+    /* Extrapolated from the measured duty sweep (2026-08-23, chassis
+     * lifted, firmware/Core/HW/duty_sweep_main.c): the duty -> speed
+     * response is closely linear above the deadband at ~0.986 edges per
+     * duty unit per second, which projects to ~4.27 wheel rev/s at full
+     * duty. Replaces an earlier 5.0 guess, and before that a 0.18 that was
+     * not physical at all (it existed to make counts visible back when
+     * EDGES_PER_WHEEL_REV was wrongly 1496).
+     *
+     * Still an approximation of the real plant: it is linear through the
+     * origin, so it models neither the ~5-10% startup deadband nor supply
+     * voltage sag. SIL asserts control-path logic — that a duty produces
+     * edges and frames get published — never speed accuracy, so that is
+     * an acceptable simplification here. */
+    float max_wheel_rps = 4.27f;       /* wheel rev/s at full duty */
     float dt_s = dt_ms * 0.001f;
     float edges = duty_frac * max_wheel_rps * (float)edges_per_rev * dt_s;
 
