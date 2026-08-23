@@ -36,7 +36,7 @@ The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**.
 
 > 当前最重要的缺口是真实底盘闭环。`motor.c` 的 TIM/GPIO 映射尚未落到实际硬件，具体步骤和验收指标见 [真机闭环与 PID 调试路线](docs/hardware-closed-loop-roadmap.md)。
 
-> 后续 Agent 请先读 [docs/agent-handoff.md](docs/agent-handoff.md)，按 M0→M1→M2 推进，不要把 SIL 或协议模拟器结果写成真机结果。
+> 后续开发请先读 [docs/project-status.md](docs/project-status.md)，按 M0→M1→M2 推进，不要把 SIL 或协议模拟器结果写成真机结果。
 
 > RViz2 渲染效果(无头 Xvfb 截图,1280×800):
 > - 静止渲染:[docs/screenshots/rviz2.png](docs/screenshots/rviz2.png)

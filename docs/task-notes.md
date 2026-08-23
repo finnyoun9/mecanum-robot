@@ -1,12 +1,12 @@
-# Codex 任务提示词（自包含，直接照做）
+# 软件任务说明
 
-> 建立于 2026-08-24。给 Codex 用。开工前先 `git pull` 并读
-> [agent-handoff.md](agent-handoff.md) 的「证据分级」和「硬件是独占资源」两节。
+> 建立于 2026-08-24。开工前先 `git pull` 并读
+> [project-status.md](project-status.md) 的「证据分级」和「硬件是独占资源」两节。
 > 这三项**全部不需要真机**，不碰 `firmware/Core/HW/`、ST-Link、烧录流程。
 >
-> 提交约定：commit message **不要加** `Co-Authored-By` trailer（用户明确要求）。
-> 每完成一项：在 [codex-tasks.md](codex-tasks.md) 勾掉对应条目、写清验证方式、push，
-> 并在 [agent-handoff.md](agent-handoff.md) 的「当前真实状态」里同步被你改变的事实。
+> 提交约定：commit message 只保留项目作者，不添加额外署名 trailer。
+> 每完成一项：在 [software-tasks.md](software-tasks.md) 勾掉对应条目、写清验证方式、push，
+> 并在 [project-status.md](project-status.md) 的「当前真实状态」里同步被你改变的事实。
 
 ---
 
@@ -58,7 +58,7 @@
 - 下发超过 0.81 m/s 的 `/cmd_vel` 时，模拟器输出的里程计/轮速不再线性外推出物理上
   不可能的速度（即编码计数增量受上限约束）。
 - 顺手核对：模拟器第 158 行转发运动学用 `r = 0.0325`，与实测半径 **0.030 m** 不符；
-  若顺手改掉则一并同步 `agent-handoff.md`，不改就在这行加注释标注「未实测/存疑」。
+  若顺手改掉则一并同步 `project-status.md`，不改就在这行加注释标注「未实测/存疑」。
   这条属于 T1 顺带发现的问题，改之前先在中文里说明你的判断。
 
 ---
@@ -103,7 +103,7 @@
 要修模式而不是放行。
 
 > 若你不要 grep 方案（比如嫌它靠文本匹配太脆），退而求其次才是分语言测试；那种情况下
-> 若 Python 侧确实挂不进现有 CI，就在 `agent-handoff.md` 注明「该处靠人肉核对」，别
+> 若 Python 侧确实挂不进现有 CI，就在 `project-status.md` 注明「该处靠人肉核对」，别
 > 假装有守卫。但 grep 方向是这个任务的最优解，优先做它。
 
 ---
@@ -142,4 +142,4 @@ static constexpr double LY_DEFAULT = 0.12;  /* Half track-width left-right */
       `tools/check_calibration_constants.sh` 挂进了 firmware-tests CI（不是「靠人肉」）
 - [ ] T3 完成并 push，更新 agent-handoff + hardware-closed-loop-roadmap
 - [ ] 确认两个 CI workflow 都绿：`gh run list` 看 `Firmware Tests` 与 `ROS2 Build & Test`
-- [ ] 在 `codex-tasks.md` 勾掉三项，写清各自验证方式
+- [ ] 在 `software-tasks.md` 勾掉三项，写清各自验证方式

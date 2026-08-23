@@ -1,12 +1,12 @@
-# Codex 任务分配
+# 软件任务分配
 
-> 建立于 2026-08-23。**先读 [agent-handoff.md](agent-handoff.md) 确认基线**，特别是"证据分级"和"硬件是独占资源"两节。
+> 建立于 2026-08-23。**先读 [project-status.md](project-status.md) 确认基线**，特别是"证据分级"和"硬件是独占资源"两节。
 >
 > 完成一项后：勾掉、写清楚验证方式、push，并在 handoff 文档里同步被你改变的事实。
 
 ## 边界
 
-**不要碰真机相关的东西**：`firmware/Core/HW/` 的烧录流程、ST-Link、`pid_step*` 相关文件。硬件当前由 Claude 侧独占（M2 PID 调参进行中，DP100 供电、底盘抬起）。同时操作会互相复位芯片。
+**不要碰真机相关的东西**：`firmware/Core/HW/` 的烧录流程、ST-Link、`pid_step*` 相关文件。硬件当前由真机调试端独占（M2 PID 调参进行中，DP100 供电、底盘抬起）。同时操作会互相复位芯片。
 
 下面三项**全部不需要真机**，可以完全并行。
 
@@ -60,7 +60,7 @@
 
 ## 完成后
 
-在 [agent-handoff.md](agent-handoff.md) 的"当前真实状态"里更新你改变的部分，并确认两个 CI workflow 都是绿的。
+在 [project-status.md](project-status.md) 的"当前真实状态"里更新你改变的部分，并确认两个 CI workflow 都是绿的。
 
 - [x] **T1**：`Stm32Sim` 现在以 DP100 台面供电实测曲线推导的 4.27 rev/s 上限和
       0.32 rev/s 保守启动阈值约束计数、虚拟 IMU；同步修正模拟器轮半径为实测 0.030 m。

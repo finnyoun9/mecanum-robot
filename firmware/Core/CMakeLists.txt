@@ -50,7 +50,7 @@ target_compile_definitions(sil_firmware PRIVATE
 )
 
 # --- Compiler flags ---
-# -Werror keeps the SIL build at zero warnings (see docs/agent-handoff.md:
+# -Werror keeps the SIL build at zero warnings (see docs/project-status.md:
 # the xLastWakeTime set-but-unused warning is a known regression risk).
 target_compile_options(sil_firmware PRIVATE
     -Wall -Wextra -Werror
