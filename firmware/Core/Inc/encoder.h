@@ -18,14 +18,28 @@
 #include <stdint.h>
 #include "motor.h"
 
-/** Encoder counts per revolution (motor shaft, before gearbox) */
-#define ENCODER_CPR 11  /* JGA25-370 typical: 11 pulses/rev on Hall sensor */
+/**
+ * Encoder edges counted per full wheel revolution — MEASURED, not derived.
+ *
+ * Measured 2026-08-23 by hand-turning the FR wheel exactly 10 revolutions
+ * with the bridges disabled (firmware/Core/HW/encoder_count_main.c) and
+ * reading the counter: 2240 and 2244 across two runs, i.e. 224.0 and
+ * 224.4 edges/rev — 0.18% apart, the spread expected from eyeballing the
+ * start/stop mark by hand.
+ *
+ * This supersedes the previous derived value of CPR(11) * 4 * GEAR_RATIO(34)
+ * = 1496, which was wrong by 6.7x on two counts: the gearbox is ~1:20, not
+ * 1:34 (224 / 11 ≈ 20.4), and the software EXTI decode in use counts only
+ * channel A's rising edge — 1x, not the 4x a hardware quadrature peripheral
+ * would give. Deriving this figure from datasheet-typical constants is what
+ * made it wrong; measuring the end-to-end number is what makes it right, so
+ * keep it measured. Re-measure if the motors, gearboxes, or the decode
+ * scheme (e.g. moving to both-edge counting) change.
+ */
+#define EDGES_PER_WHEEL_REV 224
 
-/** Gear ratio (motor shaft : wheel shaft) */
-#define GEAR_RATIO  34  /* JGA25-370: ~34:1  (may vary, measure) */
-
-/** Total edges per wheel revolution: CPR * 4 (quadrature) * GEAR_RATIO */
-#define EDGES_PER_WHEEL_REV (ENCODER_CPR * 4 * GEAR_RATIO)
+/** Wheel outer diameter in metres (60 mm mecanum wheels). */
+#define WHEEL_DIAMETER_M 0.060f
 
 /**
  * @brief Initialise all 4 encoder TIM peripherals.

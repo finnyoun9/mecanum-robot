@@ -52,7 +52,15 @@ uint16_t mock_encoder_integrate(mock_tim_t *tim, int16_t duty,
     else return tim->cnt;
 
     float duty_frac = (float)duty / 1000.0f;
-    float max_wheel_rps = 0.18f;       /* wheel rev/s at full duty */
+    /* Rough plausibility figure for a JGA25-370 behind a ~1:20 gearbox at
+     * 12V — order-of-magnitude only, NOT a measured value; real RPM is
+     * still unmeasured (roadmap M1). It was 0.18 rev/s, which is ~11 RPM
+     * at the wheel and far too slow to be physical; that number existed to
+     * make counts visible back when EDGES_PER_WHEEL_REV was wrongly 1496.
+     * SIL asserts control-path logic (does a duty produce edges, do frames
+     * get published), never speed accuracy, so this only has to be in the
+     * right ballpark to keep the encoder assertion meaningful. */
+    float max_wheel_rps = 5.0f;        /* wheel rev/s at full duty */
     float dt_s = dt_ms * 0.001f;
     float edges = duty_frac * max_wheel_rps * (float)edges_per_rev * dt_s;
 

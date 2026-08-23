@@ -23,7 +23,7 @@
   <!-- ============================================================ -->
   <!-- Parameters                                                    -->
   <!-- ============================================================ -->
-  <xacro:property name="wheel_radius"   value="0.0325"/>  <!-- m -->
+  <xacro:property name="wheel_radius"   value="0.030"/>   <!-- m (60mm mecanum wheels, measured) -->
   <xacro:property name="wheel_width"    value="0.026"/>   <!-- m -->
   <xacro:property name="wheel_mass"     value="0.05"/>    <!-- kg -->
 

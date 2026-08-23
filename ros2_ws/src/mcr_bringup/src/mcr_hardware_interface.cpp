@@ -14,14 +14,19 @@ namespace mcr_bringup
 {
 
 /* Defaults — override via URDF ros2_control xacro params */
-static constexpr double WHEEL_RADIUS_DEFAULT  = 0.0325;   /* 32.5mm radius (65mm diameter) */
+static constexpr double WHEEL_RADIUS_DEFAULT  = 0.030;    /* 30mm radius (60mm mecanum wheels, measured) */
 static constexpr double LX_DEFAULT            = 0.10;     /* Half wheelbase front-rear */
 static constexpr double LY_DEFAULT            = 0.12;     /* Half track-width left-right */
 static constexpr int    SERIAL_BAUD_DEFAULT   = 921600;
 
-/* Encoder edges per wheel revolution — must match firmware encoder.h:
-   ENCODER_CPR(11) * 4 (quadrature) * GEAR_RATIO(34) = 1496 */
-static constexpr double EDGES_PER_WHEEL_REV = 11.0 * 4.0 * 34.0;
+/* Encoder edges per wheel revolution — must match firmware encoder.h.
+   Measured 2026-08-23 by hand-turning a wheel 10 revolutions: 224 edges/rev.
+   Was 11 * 4 * 34 = 1496, derived from datasheet-typical constants that
+   proved wrong twice over (gearbox is ~1:20, and the firmware's software
+   EXTI decode counts single edges, not 4x quadrature). Odometry scales
+   directly off this, so a wrong value here misreports distance by that
+   same factor. */
+static constexpr double EDGES_PER_WHEEL_REV = 224.0;
 
 MCRHardwareInterface::MCRHardwareInterface()
 : serial_device_("/dev/ttyAMA10")   /* Pi 5 hardware UART (see docker/run.sh) */
