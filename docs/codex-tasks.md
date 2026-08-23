@@ -67,5 +67,8 @@
       验证：`python3 tools/test_stm32_uart_sim.py`（3 项通过）和
       `python3 -m py_compile tools/stm32_uart_sim.py tools/test_stm32_uart_sim.py`。
       本机无 Docker，未能在 `mcr-ros2` 容器中运行 `tools/verify_sil.sh`；待 CI/容器环境复核。
-- [ ] T2 完成并 push，更新 agent-handoff——写明已加的常数守卫。
+- [x] **T2**：新增 `tools/check_calibration_constants.sh`，在 C、C++、Python 三处
+      强制 `EDGES_PER_WHEEL_REV = 448`；`firmware-tests.yml` 已在 gcc/CMake 步骤前运行它。
+      验证：从 `/tmp` 调用脚本通过；临时将 Python 常数改为 224 后脚本非零退出，恢复 448
+      后再次通过；`python3 tools/test_stm32_uart_sim.py` 仍 3 项通过。
 - [ ] T3 完成并 push，更新 agent-handoff + hardware-closed-loop-roadmap。

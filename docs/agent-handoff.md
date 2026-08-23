@@ -85,6 +85,8 @@ Claude 和 Codex 之间**没有直接消息通道**，唯一的协调媒介是 *
 两个 workflow，推送后**请确认都变绿**（历史上 firmware-tests 红了 9 天没被发现）：
 
 - `firmware-tests.yml` —— gcc 直接编译各单测 + CMake/CTest + 两套 SIL。
+- `firmware-tests.yml` 在编译前运行 `tools/check_calibration_constants.sh`：它检查 C、C++、
+  Python 三处 `EDGES_PER_WHEEL_REV` 均为 **448**，任一处漂移会使 CI 失败。
 - `ros2-build.yml` —— 在 `ros:jazzy-ros-base` 容器里 colcon build/test，依赖清单与 `docker/Dockerfile` 保持一致（**改一处要同步另一处**）。
 
 主机单测目标带 `-UNDEBUG`：Release 会定义 `NDEBUG` 把 `assert()` 全部编译掉，测试会"通过"但什么都没验证。别去掉这个标志。
