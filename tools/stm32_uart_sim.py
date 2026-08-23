@@ -40,10 +40,11 @@ CMD_ODOM_FEEDBACK = 0x20
 CMD_ACK = 0x2E
 
 # Firmware constants — must match firmware/Core/Inc/encoder.h.
-# Measured 2026-08-23 by hand-turning a wheel 10 revolutions: 224 edges/rev.
+# Measured 2026-08-23 by hand-turning a wheel 10 revolutions: 224 edges/rev
+# at 1x, doubled to 448 when the firmware moved to both-edge decoding.
 # (Previously 11 * 4 * 34 = 1496, derived from datasheet-typical constants
 # that were wrong on both the gear ratio and the edge-counting scheme.)
-EDGES_PER_WHEEL_REV = 224
+EDGES_PER_WHEEL_REV = 448
 
 ODOM_HZ = 50          # odometry publish rate
 SIM_DT = 0.02         # sim step (20 ms)

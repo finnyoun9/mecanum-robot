@@ -15,9 +15,14 @@ DT = 0.01          # 100 Hz control loop
 PRE_SAMPLES = 20   # samples held at setpoint 0, matching pid_step_main.c
 
 
-def parse_array(log: str, name: str):
-    """Pull one `$n = {a, b, c}` GDB array out of the log."""
-    m = re.search(re.escape(name) + r"\s*=\s*\{(.*?)\}", log, re.S)
+def parse_array(log: str, index: int):
+    """Pull the `$<index> = {a, b, c}` GDB value out of the log.
+
+    Batch-mode GDB labels results `$1`, `$2`, ... rather than by variable
+    name, so these are matched positionally in the order pid_run.sh prints
+    them. Keep the two in step if that order changes.
+    """
+    m = re.search(r"\$" + str(index) + r"\s*=\s*\{(.*?)\}", log, re.S)
     if not m:
         return None
     body = m.group(1).replace("\n", " ")
@@ -42,9 +47,10 @@ def main():
     log_path, kp, ki, sp = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
     log = open(log_path, encoding="utf-8", errors="replace").read()
 
-    speed = parse_array(log, "log_speed")
-    pwm = parse_array(log, "log_pwm")
-    period = parse_array(log, "log_period_us")
+    # $1 run_done, $2 log_count, $3 log_speed, $4 log_pwm, $5 log_period_us
+    speed = parse_array(log, 3)
+    pwm = parse_array(log, 4)
+    period = parse_array(log, 5)
 
     if not speed:
         print("Could not parse log_speed — raw log follows:\n")

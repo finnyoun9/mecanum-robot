@@ -238,7 +238,7 @@ static void encoder_gpio_init(void) {
 
     /* IRQ-driven channel A pins — RISING edge only (halves the interrupt
      * rate vs. both-edges, at the cost of resolution; fine for this test). */
-    gpio.Mode = GPIO_MODE_IT_RISING;
+    gpio.Mode = GPIO_MODE_IT_RISING_FALLING;
     gpio.Pull = GPIO_PULLUP;
 
     gpio.Pin = GPIO_PIN_0;
@@ -273,19 +273,23 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     switch (GPIO_Pin) {
     case GPIO_PIN_0: /* FL channel A = PA0, channel B = PA1 */
         if (!debounce_ok(&fl_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET) fl_count++; else fl_count--;
+        if ((HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET)) fl_count++; else fl_count--;
         break;
     case GPIO_PIN_6: /* FR channel A = PA6, channel B = PA7 */
         if (!debounce_ok(&fr_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET) fr_count++; else fr_count--;
+        if ((HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET)) fr_count++; else fr_count--;
         break;
     case GPIO_PIN_7: /* RL channel A = PB7, channel B = PB6 */
         if (!debounce_ok(&rl_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET) rl_count++; else rl_count--;
+        if ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET)) rl_count++; else rl_count--;
         break;
     case GPIO_PIN_12: /* RR channel A = PB12, channel B = PB13 */
         if (!debounce_ok(&rr_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET) rr_count++; else rr_count--;
+        if ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET)) rr_count++; else rr_count--;
         break;
     default:
         break;

@@ -185,7 +185,7 @@ static void encoder_gpio_init(void) {
     gpio.Pin = GPIO_PIN_13;
     HAL_GPIO_Init(GPIOB, &gpio);
 
-    gpio.Mode = GPIO_MODE_IT_RISING;
+    gpio.Mode = GPIO_MODE_IT_RISING_FALLING;
     gpio.Pull = GPIO_PULLUP;
     gpio.Pin = GPIO_PIN_0;
     HAL_GPIO_Init(GPIOA, &gpio);
@@ -208,19 +208,23 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     switch (GPIO_Pin) {
     case GPIO_PIN_0: /* FL: A = PA0, B = PA1 */
         if (!debounce_ok(MOTOR_FL)) break;
-        encoder_on_edge(MOTOR_FL, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET);
+        encoder_on_edge(MOTOR_FL, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET,
+                        HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET);
         break;
     case GPIO_PIN_6: /* FR: A = PA6, B = PA7 */
         if (!debounce_ok(MOTOR_FR)) break;
-        encoder_on_edge(MOTOR_FR, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET);
+        encoder_on_edge(MOTOR_FR, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_SET,
+                        HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET);
         break;
     case GPIO_PIN_7: /* RL: A = PB7, B = PB6 */
         if (!debounce_ok(MOTOR_RL)) break;
-        encoder_on_edge(MOTOR_RL, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET);
+        encoder_on_edge(MOTOR_RL, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET,
+                        HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET);
         break;
     case GPIO_PIN_12: /* RR: A = PB12, B = PB13 */
         if (!debounce_ok(MOTOR_RR)) break;
-        encoder_on_edge(MOTOR_RR, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET);
+        encoder_on_edge(MOTOR_RR, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12) == GPIO_PIN_SET,
+                        HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET);
         break;
     default:
         break;

@@ -3,21 +3,16 @@
  * @brief Passive encoder counter for measuring edges-per-wheel-revolution
  *        by turning each wheel by hand. Motors are never driven.
  *
- * Purpose: encoder.h currently guesses the drivetrain constants
- * (ENCODER_CPR 11, GEAR_RATIO 34, both marked "may vary, measure"), and
- * derives EDGES_PER_WHEEL_REV = CPR * 4 * GEAR_RATIO. Two problems with
- * relying on that formula here:
+ * Purpose: EDGES_PER_WHEEL_REV was originally derived from vendor-typical
+ * constants (CPR 11 * 4 * GEAR_RATIO 34 = 1496) and came out 6.7x wrong —
+ * the gearbox is ~1:20, and software decode gives 2x, not the 4x a
+ * hardware quadrature peripheral would.
  *
- *   1. The constants are unverified vendor-typical values, not measured.
- *   2. The "* 4" assumes 4x quadrature counting. This firmware decodes
- *      on channel A's RISING edge only — 1x counting — so the formula
- *      would overstate the real edge count by 4x even if CPR and the
- *      gear ratio were both correct.
- *
- * Measuring EDGES_PER_WHEEL_REV directly sidesteps both: it is the only
+ * Measuring the figure directly sidesteps all of that: it is the only
  * quantity encoder_get_speed_rads() actually needs, and a hand-turn
  * measurement inherently captures whatever CPR, gearing and edge-counting
- * scheme are really in play.
+ * scheme are really in play. This target decodes both edges of channel A,
+ * matching encoder.c, so what it measures is what the firmware uses.
  *
  * Method: turn one wheel by hand through a whole number of revolutions
  * (10 is a good balance — enough to average out start/stop misalignment,
@@ -112,7 +107,7 @@ static void encoder_gpio_init(void) {
     gpio.Pin = GPIO_PIN_13;
     HAL_GPIO_Init(GPIOB, &gpio);
 
-    gpio.Mode = GPIO_MODE_IT_RISING;
+    gpio.Mode = GPIO_MODE_IT_RISING_FALLING;
     gpio.Pull = GPIO_PULLUP;
     gpio.Pin = GPIO_PIN_0;
     HAL_GPIO_Init(GPIOA, &gpio);
@@ -135,19 +130,23 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     switch (GPIO_Pin) {
     case GPIO_PIN_0: /* FL: A = PA0, B = PA1 */
         if (!debounce_ok(&fl_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET) fl_count++; else fl_count--;
+        if ((HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET)) fl_count++; else fl_count--;
         break;
     case GPIO_PIN_6: /* FR: A = PA6, B = PA7 */
         if (!debounce_ok(&fr_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET) fr_count++; else fr_count--;
+        if ((HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET)) fr_count++; else fr_count--;
         break;
     case GPIO_PIN_7: /* RL: A = PB7, B = PB6 */
         if (!debounce_ok(&rl_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET) rl_count++; else rl_count--;
+        if ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET)) rl_count++; else rl_count--;
         break;
     case GPIO_PIN_12: /* RR: A = PB12, B = PB13 */
         if (!debounce_ok(&rr_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET) rr_count++; else rr_count--;
+        if ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET)) rr_count++; else rr_count--;
         break;
     default:
         break;

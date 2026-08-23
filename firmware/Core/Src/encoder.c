@@ -16,8 +16,12 @@
  * in one plain function, rather than inline in an ISR, is what makes it
  * testable off-target.
  *
- * Resolution: channel A's rising edge only (1x), not 4x quadrature. The
- * measured EDGES_PER_WHEEL_REV in encoder.h already reflects this.
+ * Resolution: both edges of channel A (2x). Not 4x — that needs EXTI on
+ * channel B too, which the pin assignment cannot support (see encoder.h).
+ * At 100 Hz sampling, 1x quantised speed to 2.8 rad/s steps, coarse enough
+ * that a 10 rad/s setpoint had under four usable levels and PID tuning was
+ * meaningless; 2x halves that. EDGES_PER_WHEEL_REV in encoder.h reflects
+ * the 2x scheme.
  */
 
 #include "encoder.h"
@@ -38,18 +42,18 @@ void encoder_init(void) {
     memset(encoders, 0, sizeof(encoders));
 }
 
-void encoder_on_edge(motor_id_t id, bool b_level) {
+void encoder_on_edge(motor_id_t id, bool a_level, bool b_level) {
     if (id >= MOTOR_COUNT) return;
 
-    /* Called on channel A's rising edge, so channel B's level at this
-     * instant gives the direction unambiguously: B high means one way,
-     * B low the other. (A both-edge scheme could not use B alone — B
-     * flips between A's rising and falling edges — but this is 1x.)
+    /* Called on both of channel A's edges (2x). Comparing A against B is
+     * what makes that work: B's level relative to A inverts between A's
+     * rising and falling edge, so sampling B alone would count one edge up
+     * and the next down, cancelling to zero however far the wheel turned.
      *
      * Which physical direction maps to positive is set by the harness:
      * all four wheels were wired/adjusted so forward travel counts up.
      * See docs/wiring.md, "编码器方向校准结果". */
-    if (b_level) {
+    if (a_level == b_level) {
         encoders[id].count++;
     } else {
         encoders[id].count--;

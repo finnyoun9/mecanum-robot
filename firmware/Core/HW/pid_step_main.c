@@ -198,7 +198,7 @@ static void encoder_gpio_init(void) {
     gpio.Pin = GPIO_PIN_13;
     HAL_GPIO_Init(GPIOB, &gpio);
 
-    gpio.Mode = GPIO_MODE_IT_RISING;
+    gpio.Mode = GPIO_MODE_IT_RISING_FALLING;
     gpio.Pull = GPIO_PULLUP;
     gpio.Pin = GPIO_PIN_0;
     HAL_GPIO_Init(GPIOA, &gpio);
@@ -221,19 +221,23 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     switch (GPIO_Pin) {
     case GPIO_PIN_0:
         if (!debounce_ok(MOTOR_FL)) break;
-        encoder_on_edge(MOTOR_FL, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET);
+        encoder_on_edge(MOTOR_FL, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET,
+                        HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET);
         break;
     case GPIO_PIN_6:
         if (!debounce_ok(MOTOR_FR)) break;
-        encoder_on_edge(MOTOR_FR, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET);
+        encoder_on_edge(MOTOR_FR, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_SET,
+                        HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET);
         break;
     case GPIO_PIN_7:
         if (!debounce_ok(MOTOR_RL)) break;
-        encoder_on_edge(MOTOR_RL, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET);
+        encoder_on_edge(MOTOR_RL, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET,
+                        HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET);
         break;
     case GPIO_PIN_12:
         if (!debounce_ok(MOTOR_RR)) break;
-        encoder_on_edge(MOTOR_RR, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET);
+        encoder_on_edge(MOTOR_RR, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12) == GPIO_PIN_SET,
+                        HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET);
         break;
     default:
         break;
@@ -261,11 +265,18 @@ static void run_step_test(void) {
     pid_ctrl_t pid;
 
     /* out_max 1000 matches motor_set_duty()'s full-scale duty.
-     * integral_max 1000 lets the integrator alone reach full output, which
-     * it must be able to do: the startup deadband (5-10% duty) means a
-     * small steady-state error has to accumulate into a large enough duty
-     * to actually turn the wheel. */
-    pid_init(&pid, cfg_kp, cfg_ki, cfg_kd, 1000.0f, 1000.0f, CTRL_DT_S);
+     *
+     * integral_max is derived from Ki rather than fixed, because pid.c
+     * clamps the integral itself, not the integral *term*: the term is
+     * ki * integral. A fixed clamp of 1000 with ki=500 would let the term
+     * reach 500000 — five hundred times the output limit — so there would
+     * be no anti-windup at all, and the controller would take seconds to
+     * unwind after any saturation. Clamping at out_max/ki caps the
+     * integrator's own contribution at exactly full output, which is the
+     * most it can usefully ask for. */
+    const float ki = cfg_ki;
+    const float integral_max = (ki > 0.0f) ? (1000.0f / ki) : 1000.0f;
+    pid_init(&pid, cfg_kp, ki, cfg_kd, 1000.0f, integral_max, CTRL_DT_S);
 
     encoder_reset_all();
     (void)encoder_get_speed_rads(TUNED_WHEEL, 10);  /* baseline the sampler */

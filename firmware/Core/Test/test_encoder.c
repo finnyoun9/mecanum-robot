@@ -16,10 +16,16 @@
 
 #include "encoder.h"
 
-/* Drive n edges in one direction. */
+/* Drive n edges in one direction.
+ *
+ * Decoding keys off a_level == b_level, and A alternates every edge, so a
+ * run of same-direction edges must alternate both levels together rather
+ * than hold them fixed — that is what a real quadrature signal does. */
 static void feed_edges(motor_id_t id, int n, bool forward) {
+    static bool a = false;
     for (int i = 0; i < n; i++) {
-        encoder_on_edge(id, forward);
+        a = !a;
+        encoder_on_edge(id, a, forward ? a : !a);
     }
 }
 
@@ -64,8 +70,8 @@ static void test_motors_are_independent(void) {
 static void test_invalid_id_is_ignored(void) {
     encoder_init();
 
-    encoder_on_edge((motor_id_t)MOTOR_COUNT, true);
-    encoder_on_edge((motor_id_t)(MOTOR_COUNT + 7), true);
+    encoder_on_edge((motor_id_t)MOTOR_COUNT, true, true);
+    encoder_on_edge((motor_id_t)(MOTOR_COUNT + 7), true, true);
 
     for (int i = 0; i < MOTOR_COUNT; i++) {
         assert(encoder_get_count((motor_id_t)i) == 0);

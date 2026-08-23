@@ -29,7 +29,8 @@
  *
  * Convert a delta to wheel rev/s:
  *   rev_per_s = delta / EDGES_PER_WHEEL_REV / (STEP_RUN_MS / 1000)
- * with EDGES_PER_WHEEL_REV = 224 (measured, see encoder.h).
+ * with EDGES_PER_WHEEL_REV = 448 (measured at 1x then doubled for both-edge
+ * decoding, see encoder.h).
  */
 #include "stm32f1xx_hal.h"
 #include "motor.h"
@@ -206,7 +207,7 @@ static void encoder_gpio_init(void) {
     gpio.Pin = GPIO_PIN_13;
     HAL_GPIO_Init(GPIOB, &gpio);
 
-    gpio.Mode = GPIO_MODE_IT_RISING;
+    gpio.Mode = GPIO_MODE_IT_RISING_FALLING;
     gpio.Pull = GPIO_PULLUP;
     gpio.Pin = GPIO_PIN_0;
     HAL_GPIO_Init(GPIOA, &gpio);

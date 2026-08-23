@@ -44,6 +44,9 @@ extern void CtrlTask(void *), CommTask(void *), SensorTask(void *),
 /* The FreeRTOS scheduler loop checks this flag to exit. */
 volatile int sil_exit_flag = 0;
 
+/* Simulated channel-A level per motor, toggled once per generated edge. */
+static bool sil_enc_a[4];
+
 /* ========================================================================
  *  Helpers
  * ======================================================================== */
@@ -217,8 +220,13 @@ int main(int argc, char **argv) {
             int16_t edges = mock_encoder_edges(m, pwm[m], 1,
                                                EDGES_PER_WHEEL_REV);
             const bool forward = (edges >= 0);
-            for (int16_t e = 0; e < (forward ? edges : (int16_t)-edges); e++) {
-                encoder_on_edge((motor_id_t)m, forward);
+            const int16_t n = forward ? edges : (int16_t)-edges;
+            for (int16_t e = 0; e < n; e++) {
+                /* A toggles every edge; B tracks or opposes it to encode
+                 * direction, matching the 2x decode in encoder.c. */
+                sil_enc_a[m] = !sil_enc_a[m];
+                encoder_on_edge((motor_id_t)m, sil_enc_a[m],
+                                forward ? sil_enc_a[m] : !sil_enc_a[m]);
             }
         }
     }

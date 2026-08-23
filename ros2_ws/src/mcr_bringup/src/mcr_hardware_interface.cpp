@@ -20,13 +20,13 @@ static constexpr double LY_DEFAULT            = 0.12;     /* Half track-width le
 static constexpr int    SERIAL_BAUD_DEFAULT   = 921600;
 
 /* Encoder edges per wheel revolution — must match firmware encoder.h.
-   Measured 2026-08-23 by hand-turning a wheel 10 revolutions: 224 edges/rev.
-   Was 11 * 4 * 34 = 1496, derived from datasheet-typical constants that
-   proved wrong twice over (gearbox is ~1:20, and the firmware's software
-   EXTI decode counts single edges, not 4x quadrature). Odometry scales
-   directly off this, so a wrong value here misreports distance by that
-   same factor. */
-static constexpr double EDGES_PER_WHEEL_REV = 224.0;
+   Measured 2026-08-23 by hand-turning a wheel 10 revolutions: 224 edges/rev
+   at 1x, doubled to 448 when the firmware moved to decoding both edges of
+   channel A. Was 11 * 4 * 34 = 1496, derived from datasheet-typical
+   constants that proved wrong twice over (gearbox is ~1:20, and software
+   decode does not give 4x). Odometry scales directly off this, so a wrong
+   value here misreports distance by that same factor. */
+static constexpr double EDGES_PER_WHEEL_REV = 448.0;
 
 MCRHardwareInterface::MCRHardwareInterface()
 : serial_device_("/dev/ttyAMA10")   /* Pi 5 hardware UART (see docker/run.sh) */
