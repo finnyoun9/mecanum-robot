@@ -16,6 +16,9 @@ jobs:
     - name: Run calibration constant guard
       run: bash tools/check_calibration_constants.sh
 
+    - name: Run STM32 UART sim wheel-model tests
+      run: python3 tools/test_stm32_uart_sim.py
+
     - name: Run protocol tests
       run: |
         gcc -std=c11 -I shared shared/tests/test_protocol.c shared/protocol.c -o /tmp/test_protocol
