@@ -4,7 +4,7 @@ This directory contains standalone, bare-metal targets for real-hardware
 bring-up. They do not start FreeRTOS and must not be described as the
 encoder/PID/UART application.
 
-## Verification status (2026-08-22)
+## Verification status (2026-08-25)
 
 The following targets were built from clean artifacts with `-Wall -Werror` on
 the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
@@ -23,7 +23,9 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `duty_sweep` | duty -> speed curve across 10 levels | pass, 5,320 + 16 + 2,072 = 7,408 |
 | `encoder_port_check` | production encoder.c on hardware | pass, 6,544 + 16 + 1,936 = 8,496 |
 | `remote_drive` | NRF24 remote -> four-wheel open-loop drive | pass, 7,512 + 16 + 1,904 = 9,432 |
-| `remote_pid_drive` | NRF24 remote -> four independent speed-PI loops | build pass, hardware pending |
+| `remote_pid_drive` | NRF24 remote -> four independent speed-PI loops | build + basic hardware motion pass, 9,208 + 16 + 2,232 = 11,456 |
+| `rr_encoder_probe` | RR passive raw A/B continuity diagnostic | hardware pass: 10 turns -> A/B 4,516 each; 3,016 + 12 + 1,548 = 4,576 |
+| `rr_motor_encoder_probe` | RR-only 1.5 s full-duty raw A/B diagnostic | hardware pass: A/B 3,384/3,383, decoded +3,384; 4,484 + 16 + 1,728 = 6,228 |
 
 The host regression passes with CTest: 6/6 (`sil_firmware_ci`, PID,
 mecanum IK, AHRS, remote-control and encoder tests).
@@ -71,8 +73,11 @@ the 10.25 rad/s the duty sweep predicts for 40%, via a separate code path
 — evidence the edges-to-rad/s conversion is right, not just self-consistent.
 
 This proves open-loop GPIO/PWM/bridge mapping, encoder direction and
-counting, and speed feedback in engineering units. PID, UART control,
-battery operation, and on-ground motion remain unverified.
+counting, and speed feedback in engineering units. The `remote_pid_drive`
+target has additionally passed suspended four-wheel forward/reverse/strafe/
+rotation checks and low-speed ground basic-motion checks. Long-duration
+loaded tracking, quantified ground performance, and M3 safety re-validation
+remain unverified.
 
 **Measuring these counters:** `st-util` resets the target both on start
 and when GDB attaches, so halting right after attach samples a chip that
@@ -122,8 +127,8 @@ done
 make clean
 make TARGET=encoder_port_check EXTRA_SRCS='../Src/motor.c ../Src/encoder.c'
 
-# M3 bench target. Keep the chassis lifted for its first run: it starts
-# disabled and still needs a real four-wheel response check before ground use.
+# M3 speed-PI target. It starts disabled; keep the chassis lifted whenever
+# inspecting raw wheel telemetry or changing gains.
 make clean
 make TARGET=remote_pid_drive EXTRA_SRCS='../Src/motor.c ../Src/encoder.c ../Src/pid.c ../Src/nrf24l01.c ../Src/remote_control.c ../Src/mecanum_ik.c'
 ```

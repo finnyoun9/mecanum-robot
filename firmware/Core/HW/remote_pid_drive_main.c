@@ -24,18 +24,21 @@ extern void SystemClock_Config(void);
 #define REMOTE_TIMEOUT_MS          250U
 #define ENCODER_DEBOUNCE_CYCLES    9600U  /* 150 us at the 64 MHz HW clock */
 
-/* M2's FR bench gains.  They are a safe starting point, not a claim that all
- * four loaded wheels share the same plant; telemetry below supports tuning
- * each wheel after the lifted-chassis check. */
-#define PID_KP                     100.0f
-#define PID_KI                     300.0f
+/* M2's Kp=100/Ki=300 were valid for one isolated FR step test, but overdrive
+ * the four-wheel plant.  The measured open-loop inverse supplies most of the
+ * effort; PI only corrects wheel-to-wheel variation. */
+#define PID_KP                     15.0f
+#define PID_KI                     35.0f
 #define PID_KD                     0.0f
-#define PID_OUT_MAX                1000.0f
+#define PID_CORRECTION_MAX         350.0f
 
 /* The battery sweep reached 22.21 rad/s at 80% duty with the chassis lifted.
  * Limit incoming IK commands to a slightly conservative, measured range. */
 #define MAX_TARGET_RAD_S           20.0f
+#define TARGET_SLEW_RAD_S_PER_TICK 1.0f
+#define STOP_TARGET_RAD_S          0.25f
 #define OVERSPEED_RAD_S            28.0f
+#define OVERSPEED_TICKS            3U      /* reject one 10 ms quantisation spike */
 #define STALL_TARGET_RAD_S         3.0f
 #define STALL_SPEED_RAD_S          0.35f
 #define STALL_DUTY                 900
@@ -54,11 +57,18 @@ volatile uint32_t control_ticks;
 volatile uint8_t  drive_active;
 volatile uint8_t  failsafe_hits;
 volatile uint8_t  encoder_fault;
+volatile uint8_t  encoder_fault_wheel;
+volatile uint8_t  encoder_fault_reason; /* 1=overspeed, 2=stall */
+volatile float    requested_speed[MOTOR_COUNT];
 volatile float    target_speed[MOTOR_COUNT];
 volatile float    measured_speed[MOTOR_COUNT];
 volatile int16_t  last_duty[MOTOR_COUNT];
+volatile float    fault_target_speed;
+volatile float    fault_measured_speed;
+volatile int16_t  fault_duty;
 
 static uint8_t stall_ticks[MOTOR_COUNT];
+static uint8_t overspeed_ticks[MOTOR_COUNT];
 
 static void Error_Handler(void) {
     __disable_irq();
@@ -70,6 +80,29 @@ static float clamp_speed(float speed) {
     if (speed > MAX_TARGET_RAD_S) return MAX_TARGET_RAD_S;
     if (speed < -MAX_TARGET_RAD_S) return -MAX_TARGET_RAD_S;
     return speed;
+}
+
+static float speed_feedforward(float speed) {
+    /* Inverse of the lifted-chassis sweep: rad/s = 0.2875*duty% - 0.79.
+     * Keep this continuous around zero; the PI term supplies any extra
+     * startup effort without turning a small command into a full-PWM step. */
+    float magnitude = fabsf(speed);
+    float duty;
+
+    if (magnitude < STOP_TARGET_RAD_S) return 0.0f;
+    duty = (magnitude + 0.79f) * 34.78f;
+    if (duty > 1000.0f) duty = 1000.0f;
+    return (speed < 0.0f) ? -duty : duty;
+}
+
+static float slew_towards(float current, float requested) {
+    if (requested > current + TARGET_SLEW_RAD_S_PER_TICK) {
+        return current + TARGET_SLEW_RAD_S_PER_TICK;
+    }
+    if (requested < current - TARGET_SLEW_RAD_S_PER_TICK) {
+        return current - TARGET_SLEW_RAD_S_PER_TICK;
+    }
+    return requested;
 }
 
 static void dwt_cycle_counter_init(void) {
@@ -215,7 +248,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
         break;
     case GPIO_PIN_12:
         if (debounce_ok(MOTOR_RR)) {
-            encoder_on_edge(MOTOR_RR, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12) == GPIO_PIN_SET,
+            encoder_on_edge(MOTOR_RR,
+                            HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12) == GPIO_PIN_SET,
                             HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET);
         }
         break;
@@ -234,10 +268,12 @@ void EXTI15_10_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_12); }
 static void reset_control(void) {
     for (uint32_t i = 0; i < MOTOR_COUNT; i++) {
         pid_reset(&wheel_pid[i]);
+        requested_speed[i] = 0.0f;
         target_speed[i] = 0.0f;
         measured_speed[i] = 0.0f;
         last_duty[i] = 0;
         stall_ticks[i] = 0U;
+        overspeed_ticks[i] = 0U;
     }
 }
 
@@ -248,16 +284,22 @@ static void all_stop(void) {
 }
 
 static void control_init(void) {
-    const float integral_max = PID_OUT_MAX / PID_KI;
+    const float integral_max = PID_CORRECTION_MAX / PID_KI;
     for (uint32_t i = 0; i < MOTOR_COUNT; i++) {
-        pid_init(&wheel_pid[i], PID_KP, PID_KI, PID_KD, PID_OUT_MAX,
+        pid_init(&wheel_pid[i], PID_KP, PID_KI, PID_KD, PID_CORRECTION_MAX,
                  integral_max, (float)CTRL_PERIOD_MS * 0.001f);
     }
+    encoder_fault_wheel = UINT8_MAX;
     reset_control();
 }
 
-static bool wheel_fault(motor_id_t id, float target, float measured, int16_t duty) {
-    if (fabsf(measured) > OVERSPEED_RAD_S) return true;
+static uint8_t wheel_fault(motor_id_t id, float target, float measured, int16_t duty) {
+    if (fabsf(measured) > OVERSPEED_RAD_S) {
+        if (overspeed_ticks[id] < OVERSPEED_TICKS) overspeed_ticks[id]++;
+    } else {
+        overspeed_ticks[id] = 0U;
+    }
+    if (overspeed_ticks[id] >= OVERSPEED_TICKS) return 1U;
 
     if (fabsf(target) > STALL_TARGET_RAD_S && fabsf(measured) < STALL_SPEED_RAD_S &&
         abs(duty) >= STALL_DUTY) {
@@ -265,25 +307,48 @@ static bool wheel_fault(motor_id_t id, float target, float measured, int16_t dut
     } else {
         stall_ticks[id] = 0U;
     }
-    return stall_ticks[id] >= STALL_TICKS;
+    return (stall_ticks[id] >= STALL_TICKS) ? 2U : 0U;
 }
 
 static void control_tick(void) {
     for (uint32_t i = 0; i < MOTOR_COUNT; i++) {
         motor_id_t id = (motor_id_t)i;
-        float target = target_speed[i];
+        float requested = requested_speed[i];
+        float target = slew_towards(target_speed[i], requested);
         float measured = encoder_get_speed_rads(id, CTRL_PERIOD_MS);
         float output;
         int16_t duty;
 
+        if (fabsf(requested) < STOP_TARGET_RAD_S &&
+            fabsf(target_speed[i]) < STOP_TARGET_RAD_S) {
+            /* Do not let an integral residue dither a stopped wheel in its
+             * static-friction band.  PWM=0 coasts cleanly; the next motion
+             * command begins from a fresh PI state. */
+            target_speed[i] = 0.0f;
+            measured_speed[i] = measured;
+            pid_reset(&wheel_pid[i]);
+            last_duty[i] = 0;
+            motor_set_duty(id, 0);
+            continue;
+        }
+
+        target_speed[i] = target;
         measured_speed[i] = measured;
         pid_setpoint(&wheel_pid[i], target);
-        output = pid_update(&wheel_pid[i], measured);
+        output = speed_feedforward(target) + pid_update(&wheel_pid[i], measured);
+        if (output > 1000.0f) output = 1000.0f;
+        if (output < -1000.0f) output = -1000.0f;
         duty = (int16_t)output;
         last_duty[i] = duty;
 
-        if (wheel_fault(id, target, measured, duty)) {
+        uint8_t fault_reason = wheel_fault(id, target, measured, duty);
+        if (fault_reason != 0U) {
             encoder_fault = 1U;
+            encoder_fault_wheel = (uint8_t)i;
+            encoder_fault_reason = fault_reason;
+            fault_target_speed = target;
+            fault_measured_speed = measured;
+            fault_duty = duty;
             return;
         }
         motor_set_duty(id, duty);
@@ -330,7 +395,7 @@ int main(void) {
                     bridges_on = true;
                 }
                 for (uint32_t i = 0; i < MOTOR_COUNT; i++) {
-                    target_speed[i] = clamp_speed(result.wheel_speed[i]);
+                    requested_speed[i] = clamp_speed(result.wheel_speed[i]);
                 }
             } else if (bridges_on) {
                 all_stop();
