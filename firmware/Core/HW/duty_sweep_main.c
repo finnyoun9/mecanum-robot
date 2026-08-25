@@ -230,19 +230,27 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     switch (GPIO_Pin) {
     case GPIO_PIN_0:
         if (!debounce_ok(&fl_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET) fl_count++; else fl_count--;
+        /* FL: A = PA0, B = PA1 -- direction is a_level == b_level, valid on both of A's edges. */
+        if ((HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET)) fl_count++; else fl_count--;
         break;
     case GPIO_PIN_6:
         if (!debounce_ok(&fr_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET) fr_count++; else fr_count--;
+        /* FR: A = PA6, B = PA7 -- direction is a_level == b_level, valid on both of A's edges. */
+        if ((HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_SET)) fr_count++; else fr_count--;
         break;
     case GPIO_PIN_7:
         if (!debounce_ok(&rl_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET) rl_count++; else rl_count--;
+        /* RL: A = PB7, B = PB6 -- direction is a_level == b_level, valid on both of A's edges. */
+        if ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET)) rl_count++; else rl_count--;
         break;
     case GPIO_PIN_12:
         if (!debounce_ok(&rr_last_cycle)) break;
-        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET) rr_count++; else rr_count--;
+        /* RR: A = PB12, B = PB13 -- direction is a_level == b_level, valid on both of A's edges. */
+        if ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12) == GPIO_PIN_SET) ==
+            (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET)) rr_count++; else rr_count--;
         break;
     default:
         break;
