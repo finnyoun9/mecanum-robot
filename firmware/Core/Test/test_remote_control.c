@@ -93,6 +93,12 @@ int main(void)
     assert(remote_process(p, &st, &res) == true);
     assert(st.enabled == true);
 
+    /* A retransmitted K1 event must not undo the enable latch.  The hand
+     * controller clears KEY only after an acknowledged TX, so a key can
+     * legitimately occupy more than one received frame. */
+    assert(remote_process(p, &st, &res) == true);
+    assert(st.enabled == true);
+
     make_packet(p, 0, 100, 0, 0, 0);
     assert(remote_process(p, &st, &res) == true);
     assert(st.enabled == true);

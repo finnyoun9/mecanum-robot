@@ -62,7 +62,11 @@ bool remote_process(const uint8_t packet[NRF24L01_PACKET_WIDTH],
     uint8_t key = packet[PROTO_OFF_KEY];
     out->key = key;
 
-    if (key == REMOTE_KEY_TOGGLE_ENABLE) {
+    /* KEY remains non-zero until the hand controller gets a successful TX.
+     * Receive retries can therefore deliver K1 in consecutive frames.  K1
+     * is an edge-triggered event, never a level-triggered dead-man switch. */
+    if (key == REMOTE_KEY_TOGGLE_ENABLE &&
+        state->last_key != REMOTE_KEY_TOGGLE_ENABLE) {
         state->enabled = !state->enabled;
     }
     state->last_key = key;
