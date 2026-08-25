@@ -31,6 +31,7 @@ CFLAGS  = -mcpu=cortex-m3 -mthumb
 CFLAGS += -Os -g -Wall -Werror -fdata-sections -ffunction-sections
 CFLAGS += -DSTM32F103xB -DUSE_HAL_DRIVER
 CFLAGS += -I. -I$(ROOT)/Inc -I$(CMSIS_INC) -I$(CMSIS_DEV) -I$(HAL_INC)
+CFLAGS += -I$(ROOT)/../../shared
 
 LDFLAGS  = -mcpu=cortex-m3 -mthumb -T STM32F103XB_FLASH.ld
 LDFLAGS += -Wl,--gc-sections -nostartfiles -specs=nosys.specs -lc -lm
@@ -45,7 +46,8 @@ ASM_SRCS = startup_stm32f103xb.s
 OBJS  = $(notdir $(C_SRCS:.c=.o))
 OBJS += $(ASM_SRCS:.s=.o)
 
-vpath %.c . $(ROOT)/Src $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx $(HAL_SRC)
+vpath %.c . $(ROOT)/Src $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx $(HAL_SRC) \
+    $(ROOT)/../../shared
 
 .PHONY: all clean flash debug-server
 

@@ -26,6 +26,7 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `remote_pid_drive` | NRF24 remote -> four independent speed-PI loops | build + basic hardware motion pass, 9,208 + 16 + 2,232 = 11,456 |
 | `rr_encoder_probe` | RR passive raw A/B continuity diagnostic | hardware pass: 10 turns -> A/B 4,516 each; 3,016 + 12 + 1,548 = 4,576 |
 | `rr_motor_encoder_probe` | RR-only 1.5 s full-duty raw A/B diagnostic | hardware pass: A/B 3,384/3,383, decoded +3,384; 4,484 + 16 + 1,728 = 6,228 |
+| `uart_link_probe` | Pi ↔ STM32 USART1 protocol transport only | build pass, 4,816 + 12 + 1,716 = 6,544; hardware pending |
 
 The host regression passes with CTest: 6/6 (`sil_firmware_ci`, PID,
 mecanum IK, AHRS, remote-control and encoder tests).
@@ -131,6 +132,11 @@ make TARGET=encoder_port_check EXTRA_SRCS='../Src/motor.c ../Src/encoder.c'
 # inspecting raw wheel telemetry or changing gains.
 make clean
 make TARGET=remote_pid_drive EXTRA_SRCS='../Src/motor.c ../Src/encoder.c ../Src/pid.c ../Src/nrf24l01.c ../Src/remote_control.c ../Src/mecanum_ik.c'
+
+# M4 step 1.  PA9/PA10 at 921600 bit/s; sends empty odometry at 20 Hz and
+# acknowledges heartbeats.  It does not initialise motors, TB6612 or PWM.
+make clean
+make TARGET=uart_link_probe EXTRA_SRCS='../../../shared/protocol.c'
 ```
 
 ## Target overview
