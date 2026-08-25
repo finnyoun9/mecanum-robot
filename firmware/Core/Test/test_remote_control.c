@@ -72,11 +72,17 @@ int main(void)
     assert(close(res.wheel_speed[1], res.wheel_speed[2], 1e-4f));  /* FR=RL */
     assert(close(res.wheel_speed[0], -res.wheel_speed[1], 1e-4f));
 
-    make_packet(p, 0, 0, 100, 0, 0);
+    /* The controller's RH ADC value decreases when its stick moves left.
+     * Conventional steering is stick-left => robot turns CCW (nose left),
+     * therefore this packet must command left wheels backward and right
+     * wheels forward. */
+    make_packet(p, 0, 0, -100, 0, 0);
     assert(remote_process(p, &st, &res) == true);
     assert(close(res.wheel_speed[0], res.wheel_speed[2], 1e-4f));  /* FL=RL */
     assert(close(res.wheel_speed[1], res.wheel_speed[3], 1e-4f));  /* FR=RR */
     assert(close(res.wheel_speed[0], -res.wheel_speed[1], 1e-4f));
+    assert(res.wheel_speed[0] < 0.0f);  /* left wheels backward */
+    assert(res.wheel_speed[1] > 0.0f);  /* right wheels forward */
 
     /* (5) K1 is an event, not a dead-man switch: later no-key packets
      *     preserve the enabled latch and carry joystick commands. */

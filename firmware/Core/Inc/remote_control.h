@@ -6,7 +6,7 @@
  * joysticks onto omnidirectional (mecanum) motion:
  *
  *   left stick  = translation  (LV → vx forward/back, LH → vy strafe)
- *   right stick = rotation     (RH → omega)
+ *   right stick = rotation     (RH → -omega; stick left turns nose left)
  *
  * Uses the same 6-byte protocol as the remote firmware:
  *   [0]=ID(0x00), [1]=LH, [2]=LV, [3]=RH, [4]=RV, [5]=KEY
