@@ -103,7 +103,7 @@ w4(RR) = (vx - vy + (lx+ly)·ω) / R
 | `firmware/Core/Src/robot_control.c` | 新增 `robot_set_target_wheels()`:写 4 轮目标速度并刷新通信看门狗 |
 | `firmware/Core/Src/main.c` | 新增 `RemoteTask`:20 Hz 轮询 NRF24L01,驱动遥控逻辑 |
 
-`RemoteTask` 优先于 `CommTask` 之外的电机命令源,与 UART 命令互不冲突 —— 谁最近发命令谁生效。遥控包到达即刷新看门狗,失联超过 100 ms 会触发急停(安全默认)。
+`RemoteTask` 优先于 `CommTask` 之外的电机命令源,与 UART 命令互不冲突 —— 谁最近发命令谁生效。遥控包到达即刷新看门狗；手柄标称 10 Hz（100 ms），车端 `remote_drive` 使用 250 ms 看门狗，容忍正常调度抖动和单帧丢失后再急停（安全默认）。
 
 遥控器工程(完整 Keil 工程,可直接编译烧录)放在 `firmware/remote_controller/`。
 

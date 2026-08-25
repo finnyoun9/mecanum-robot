@@ -23,9 +23,9 @@
  * Safety:
  *   - Drive starts DISABLED. K1 must be pressed before anything moves.
  *   - Losing the radio for REMOTE_TIMEOUT_MS stops the motors and drops
- *     both bridges. The controller sends at 10 Hz, so 100 ms is three
- *     missed packets — long enough not to trip on a single lost frame,
- *     short enough that a runaway is measured in centimetres.
+ *     both bridges. The controller sends nominally every 100 ms; the
+ *     250 ms watchdog tolerates normal scheduling jitter and one missing
+ *     frame, while still stopping a lost controller promptly.
  *
  * LIFT THE CHASSIS for the first run. Check that each stick direction
  * moves the robot the way it should and that K9 stops it, before putting
@@ -41,8 +41,10 @@ extern void SystemClock_Config(void);
 #define PWM_PRESCALER   2U
 #define PWM_PERIOD      999U
 
-/* Three missed packets at the controller's 10 Hz send rate. */
-#define REMOTE_TIMEOUT_MS  100U
+/* 10 Hz is a 100 ms nominal period.  A 100 ms watchdog races the next
+ * legitimate packet (the measured cadence is 9.96 Hz), immediately drops
+ * the K1 latch, and looks like a single twitch. */
+#define REMOTE_TIMEOUT_MS  250U
 
 static TIM_HandleTypeDef htim2;
 static TIM_HandleTypeDef htim3;

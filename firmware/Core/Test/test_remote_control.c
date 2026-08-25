@@ -78,11 +78,21 @@ int main(void)
     assert(close(res.wheel_speed[1], res.wheel_speed[3], 1e-4f));  /* FR=RR */
     assert(close(res.wheel_speed[0], -res.wheel_speed[1], 1e-4f));
 
-    /* (5) K1 toggles enable; K9 reports emergency-stop event. */
+    /* (5) K1 is an event, not a dead-man switch: later no-key packets
+     *     preserve the enabled latch and carry joystick commands. */
     make_packet(p, 0, 0, 0, 0, 1);
     assert(remote_process(p, &st, &res) == true);
     assert(st.enabled == true);
 
+    make_packet(p, 0, 100, 0, 0, 0);
+    assert(remote_process(p, &st, &res) == true);
+    assert(st.enabled == true);
+    for (int i = 0; i < 4; i++) {
+        assert(res.wheel_speed[i] > 0.0f);
+    }
+
+    /* (6) A subsequent K1 toggles the latched enable back off; K9 reports
+     *     the emergency-stop event. */
     make_packet(p, 0, 0, 0, 0, 1);
     assert(remote_process(p, &st, &res) == true);
     assert(st.enabled == false);
