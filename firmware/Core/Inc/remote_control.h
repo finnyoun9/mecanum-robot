@@ -5,7 +5,7 @@
  * Parses the 江协科技 hand-held controller's packet format and maps the
  * joysticks onto omnidirectional (mecanum) motion:
  *
- *   left stick  = translation  (LV → vx forward/back, LH → vy strafe)
+ *   left stick  = translation  (LV → vx forward/back, LH → -vy; stick left strafes left)
  *   right stick = rotation     (RH → -omega; stick left turns nose left)
  *
  * Uses the same 6-byte protocol as the remote firmware:

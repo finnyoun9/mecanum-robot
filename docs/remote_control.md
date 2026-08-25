@@ -68,7 +68,7 @@ NRF24L01+ 模块 ←→ STM32(GPIO 位带操作 / bit-banged SPI):
 | 摇杆 Joystick | 运动 Motion | 限幅 Limit |
 | --- | --- | --- |
 | 左摇杆纵向 LV | 前后平移 vx | ±0.6 m/s |
-| 左摇杆横向 LH | 左右横移 vy | ±0.6 m/s |
+| 左摇杆横向 LH | 左右横移 vy（摇杆左→车左） | ±0.6 m/s |
 | 右摇杆横向 RH | 原地旋转 omega（摇杆左→车头左/逆时针） | ±2.5 rad/s |
 | 右摇杆纵向 RV | 保留 (reserved) | — |
 

@@ -69,7 +69,9 @@ bool remote_process(const uint8_t packet[NRF24L01_PACKET_WIDTH],
 
     /* Scale joystick (-100..100) to twist (m/s, rad/s). */
     float vx    = clamp((float)lv / 100.0f, 1.0f) * REMOTE_VX_MAX;
-    float vy    = clamp((float)lh / 100.0f, 1.0f) * REMOTE_VY_MAX;
+    /* Hand controller LH decreases when the stick moves left.  Negate it
+     * so stick-left commands positive vy, i.e. a left strafe. */
+    float vy    = -clamp((float)lh / 100.0f, 1.0f) * REMOTE_VY_MAX;
     /* Hand controller RH decreases when the stick moves left.  Negate it
      * so the conventional command holds: stick-left turns the robot CCW
      * (its nose left), while stick-right turns it CW. */

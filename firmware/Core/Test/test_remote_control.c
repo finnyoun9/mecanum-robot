@@ -62,15 +62,18 @@ int main(void)
         assert(res.wheel_speed[i] < 0.0f);
     }
 
-    /* (4) Strafe (LH=+100) vs rotate (RH=+100) produce distinct patterns.
+    /* (4) The controller's LH ADC value decreases when its stick moves
+     *     left. Conventional strafe is stick-left => robot moves left.
      *     Strafe: same-side wheels pair up (FL=RR, FR=RL).
      *     Rotate: same-axle wheels pair up (FL=RL, FR=RR).
      *     In both, left wheels oppose right wheels. */
-    make_packet(p, 100, 0, 0, 0, 0);
+    make_packet(p, -100, 0, 0, 0, 0);
     assert(remote_process(p, &st, &res) == true);
     assert(close(res.wheel_speed[0], res.wheel_speed[3], 1e-4f));  /* FL=RR */
     assert(close(res.wheel_speed[1], res.wheel_speed[2], 1e-4f));  /* FR=RL */
     assert(close(res.wheel_speed[0], -res.wheel_speed[1], 1e-4f));
+    assert(res.wheel_speed[0] < 0.0f);  /* FL/RR backward */
+    assert(res.wheel_speed[1] > 0.0f);  /* FR/RL forward */
 
     /* The controller's RH ADC value decreases when its stick moves left.
      * Conventional steering is stick-left => robot turns CCW (nose left),
