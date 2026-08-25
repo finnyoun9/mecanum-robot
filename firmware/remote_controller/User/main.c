@@ -13,7 +13,7 @@ uint16_t AD_LH, AD_LV, AD_RH, AD_RV;	//四个摇杆值的AD原始数据，范围
 int8_t LH, LV, RH, RV;					//四个摇杆值，范围：-100~100
 uint8_t KEY;							//遥控数据包的按键键码
 
-uint8_t Flag;							//定时标志位，在定时中断中每隔100ms置一次1
+volatile uint8_t Flag;						//定时标志位，在定时中断中每隔100ms置一次1
 
 uint8_t SendFlag;						//发送标志位
 uint8_t SuccessRatio;					//发送成功比率，可用于判断信号强度
@@ -24,6 +24,10 @@ uint8_t CalculateSuccessRatio(uint8_t SendFlag);
 
 int main(void)
 {
+	/* SystemInit() can leave SYSCLK on 8 MHz HSI when HSE does not start.
+	 * Keep CMSIS timing users consistent with the clock actually selected. */
+	SystemCoreClockUpdate();
+
 	/*模块初始化*/
 	OLED_Init();		//OLED初始化
 	NRF24L01_Init();	//NRF24L01初始化

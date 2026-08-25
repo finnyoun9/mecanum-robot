@@ -48,7 +48,10 @@ NRF24L01+ 模块 ←→ STM32(GPIO 位带操作 / bit-banged SPI):
 
 ## 数据包格式 / Packet Format
 
-发送频率 100 ms (10 Hz),前 6 字节有意义(协议与江科遥控器一致):
+发送频率 100 ms (10 Hz),前 6 字节有意义(协议与江科遥控器一致)。手柄 TIM1 不可把
+预分频固定为 72 MHz：这块完整手柄曾在断电重启后回退到 8 MHz HSI；应从 RCC 当前 PCLK2
+推导 TIM1 的 1 MHz 计数时钟（8 MHz 时 PSC=7，72 MHz 时 PSC=71）。否则实际发包会降至约
+1 Hz，而 OLED `Sig` 仍可能显示 10（它只统计 ACK 成功率）。
 
 | Byte | 含义 Meaning | 范围 Range |
 | --- | --- | --- |

@@ -7,18 +7,33 @@
   */
 void Timer_Init(void)
 {
+	RCC_ClocksTypeDef RCC_Clocks;
+	uint32_t TIM1Clock;
+	uint32_t Prescaler;
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure;
+
 	/*开启时钟*/
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);			//开启TIM1的时钟
 	
 	/*配置时钟源*/
 	TIM_InternalClockConfig(TIM1);		//选择TIM1为内部时钟，若不调用此函数，TIM默认也为内部时钟
 	
+	/* Read RCC's active clock rather than assuming 72 MHz.  This board can
+	 * fall back to 8 MHz HSI when HSE fails; PSC=71 then made the nominal
+	 * 1 ms interrupt last 9 ms and the 10 Hz radio cadence collapse to ~1 Hz. */
+	RCC_GetClocksFreq(&RCC_Clocks);
+	TIM1Clock = RCC_Clocks.PCLK2_Frequency;
+	if ((RCC->CFGR & RCC_CFGR_PPRE2) != 0U)
+	{
+		TIM1Clock *= 2U;	/* APB2 timer clock doubles when prescaled. */
+	}
+	Prescaler = TIM1Clock / 1000000U;	/* target a 1 MHz TIM1 counter */
+
 	/*时基单元初始化*/
-	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure;				//定义结构体变量
 	TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;     //时钟分频，选择不分频，此参数用于配置滤波器时钟，不影响时基单元功能
 	TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up; //计数器模式，选择向上计数
 	TIM_TimeBaseInitStructure.TIM_Period = 1000 - 1;                //计数周期，即ARR的值
-	TIM_TimeBaseInitStructure.TIM_Prescaler = 72 - 1;               //预分频器，即PSC的值
+	TIM_TimeBaseInitStructure.TIM_Prescaler = Prescaler - 1U;       //1 MHz / 1000 = 1 ms
 	TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;            //重复计数器，高级定时器会用到，此处配置为0
 	TIM_TimeBaseInit(TIM1, &TIM_TimeBaseInitStructure);             //将结构体变量交给TIM_TimeBaseInit，配置TIM1的时基单元
 	
