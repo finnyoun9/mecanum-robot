@@ -20,6 +20,7 @@
 
 #include "stm32f10x.h"
 #include "OLED.h"
+#include "Delay.h"
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
@@ -129,13 +130,10 @@ void OLED_W_SDA(uint8_t BitValue)
   */
 void OLED_GPIO_Init(void)
 {
-	uint32_t i, j;
-	
-	/*在初始化前，加入适量延时，待OLED供电稳定*/
-	for (i = 0; i < 1000; i ++)
-	{
-		for (j = 0; j < 1000; j ++);
-	}
+	/* Give the OLED supply time to rise before its first I2C command.  The
+	 * former empty loops were optimised away at -Os, so power-on timing
+	 * depended on the debugger/ST-Link connection. */
+	Delay_ms(100);
 	
 	/*将SCL和SDA引脚初始化为开漏模式*/
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);

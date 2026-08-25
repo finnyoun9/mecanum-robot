@@ -7,7 +7,10 @@
   */
 void Delay_us(uint32_t xus)
 {
-	SysTick->LOAD = 72 * xus;				//设置定时器重装值
+	/* SystemCoreClock is refreshed in main() after SystemInit().  The handset
+	 * can run from 8 MHz HSI after a failed HSE startup, so a fixed 72 MHz
+	 * conversion makes every power-on delay wrong in that mode. */
+	SysTick->LOAD = (SystemCoreClock / 1000000U) * xus;	//设置定时器重装值
 	SysTick->VAL = 0x00;					//清空当前计数值
 	SysTick->CTRL = 0x00000005;				//设置时钟源为HCLK，启动定时器
 	while(!(SysTick->CTRL & 0x00010000));	//等待计数到0
