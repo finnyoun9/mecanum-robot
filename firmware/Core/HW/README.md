@@ -22,6 +22,7 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `encoder_count` | passive counter, motors never driven | pass, 3,412 + 12 + 1,572 = 4,996 |
 | `duty_sweep` | duty -> speed curve across 10 levels | pass, 5,320 + 16 + 2,072 = 7,408 |
 | `encoder_port_check` | production encoder.c on hardware | pass, 6,544 + 16 + 1,936 = 8,496 |
+| `remote_drive` | NRF24 remote -> four-wheel open-loop drive | pass, 7,512 + 16 + 1,904 = 9,432 |
 
 The host regression passes with CTest: 6/6 (`sil_firmware_ci`, PID,
 mecanum IK, AHRS, remote-control and encoder tests).
@@ -77,6 +78,13 @@ and when GDB attaches, so halting right after attach samples a chip that
 restarted milliseconds earlier — still inside the 2s startup delay, which
 reads as "encoders stuck at zero while the wheels visibly spin". Let it
 free-run first, then interrupt:
+
+```sh
+# NRF24 remote drive. Links the radio driver, the joystick mapping and the
+# motor driver -- the first target to build nrf24l01.c against the real HAL.
+make clean
+make TARGET=remote_drive EXTRA_SRCS='../Src/motor.c ../Src/nrf24l01.c ../Src/remote_control.c ../Src/mecanum_ik.c'
+```
 
 ```sh
 arm-none-eabi-gdb -q --batch \

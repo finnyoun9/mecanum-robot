@@ -20,9 +20,15 @@
 #define PROTO_ID_REMOTE 0x00
 
 /* Wheel geometry — must match mcr.urdf.xacro and the ROS2 hardware
- * interface: wheel_radius 0.0325, lx 0.10, ly 0.12. */
+ * interface. Radius is MEASURED: 60 mm wheels, so 0.030 m. It read 0.0325
+ * here until 2026-08-25, an 8% error left behind when the measurement
+ * landed in encoder.h, the ROS 2 interface and the simulator but not in
+ * this file.
+ *
+ * lx/ly remain ESTIMATES and have never been measured — see
+ * mcr_hardware_interface.cpp and the roadmap's M4 section. */
 static const mecanum_ik_config_t ik_cfg = {
-    .wheel_radius = 0.0325f,
+    .wheel_radius = 0.030f,
     .lx = 0.10f,
     .ly = 0.12f,
 };

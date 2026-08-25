@@ -21,7 +21,16 @@
 
 #include "nrf24l01.h"
 
-#include "main.h"  /* CubeMX HAL — GPIO definitions */
+/* Same split motor.c uses: the bare-metal HW targets define STM32F103xB
+ * and get the real HAL, while the SIL build falls back to mocks/main.h.
+ * Until 2026-08-25 this unconditionally included "main.h", which only ever
+ * existed as a SIL mock — so this driver had never once been compiled
+ * against the real HAL, despite being described as done. */
+#ifdef STM32F103xB
+#include "stm32f1xx_hal.h"
+#else
+#include "main.h"
+#endif
 
 /* ==================================================================== */
 /*  Pin configuration                                                    */
