@@ -23,6 +23,7 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `duty_sweep` | duty -> speed curve across 10 levels | pass, 5,320 + 16 + 2,072 = 7,408 |
 | `encoder_port_check` | production encoder.c on hardware | pass, 6,544 + 16 + 1,936 = 8,496 |
 | `remote_drive` | NRF24 remote -> four-wheel open-loop drive | pass, 7,512 + 16 + 1,904 = 9,432 |
+| `remote_pid_drive` | NRF24 remote -> four independent speed-PI loops | build pass, hardware pending |
 
 The host regression passes with CTest: 6/6 (`sil_firmware_ci`, PID,
 mecanum IK, AHRS, remote-control and encoder tests).
@@ -120,6 +121,11 @@ done
 
 make clean
 make TARGET=encoder_port_check EXTRA_SRCS='../Src/motor.c ../Src/encoder.c'
+
+# M3 bench target. Keep the chassis lifted for its first run: it starts
+# disabled and still needs a real four-wheel response check before ground use.
+make clean
+make TARGET=remote_pid_drive EXTRA_SRCS='../Src/motor.c ../Src/encoder.c ../Src/pid.c ../Src/nrf24l01.c ../Src/remote_control.c ../Src/mecanum_ik.c'
 ```
 
 ## Target overview
