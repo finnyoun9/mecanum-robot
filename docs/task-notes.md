@@ -137,9 +137,9 @@ static constexpr double LY_DEFAULT = 0.12;  /* Half track-width left-right */
 
 ## 三项完成后
 
-- [ ] T1 完成并 push，更新 agent-handoff
-- [ ] T2 完成并 push，更新 agent-handoff——写明已加的 grep 守卫
+- [ ] T1 完成并 push，更新 project-status
+- [ ] T2 完成并 push，更新 project-status——写明已加的 grep 守卫
       `tools/check_calibration_constants.sh` 挂进了 firmware-tests CI（不是「靠人肉」）
-- [ ] T3 完成并 push，更新 agent-handoff + hardware-closed-loop-roadmap
+- [ ] T3 完成并 push，更新 project-status + hardware-closed-loop-roadmap
 - [ ] 确认两个 CI workflow 都绿：`gh run list` 看 `Firmware Tests` 与 `ROS2 Build & Test`
 - [ ] 在 `software-tasks.md` 勾掉三项，写清各自验证方式
