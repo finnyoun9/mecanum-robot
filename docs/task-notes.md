@@ -143,3 +143,95 @@ static constexpr double LY_DEFAULT = 0.12;  /* Half track-width left-right */
 - [ ] T3 完成并 push，更新 project-status + hardware-closed-loop-roadmap
 - [ ] 确认两个 CI workflow 都绿：`gh run list` 看 `Firmware Tests` 与 `ROS2 Build & Test`
 - [ ] 在 `software-tasks.md` 勾掉三项，写清各自验证方式
+
+---
+---
+
+# 第二轮任务（2026-08-25 交接）
+
+> T1/T2/T3 已完成。以下是新一轮，**同样全部不需要真机**。
+>
+> 开工前先 `git pull`，读 [project-status.md](project-status.md)，特别是新增的**「当前卡点」**一节——
+> 真机侧目前卡在遥控器供电上，那部分**不归你做**，别去碰 ST-Link 和烧录。
+
+## 边界（与上一轮相同）
+
+**不要碰**：`firmware/Core/HW/` 的烧录流程、ST-Link、真机测试。硬件由真机调试端独占。
+
+**新增说明**：`firmware/Core/HW/remote_drive_main.c` 是新加的真机目标，**代码可以读、可以提改进意见，但不要擅自改动**——它正在真机验证过程中，改了会让另一端基于错误前提排查。
+
+---
+
+## T4：把标定守卫扩展到轮径（优先）
+
+**背景**：T2 建的 `tools/check_calibration_constants.sh` 只守 `EDGES_PER_WHEEL_REV`。**轮径没守，然后就出事了**——
+
+2026-08-25 发现 `firmware/Core/Src/remote_control.c` 的 `wheel_radius` 仍是 **0.0325**，而实测值 **0.030** 早已同步到 `encoder.h`、ROS 2 硬件接口、URDF 和模拟器。这个文件被漏了，**每一条下发的轮速都因此差 8%**，而且是靠人偶然读到才发现的——正是 T2 想防止的那类问题，只不过守卫没覆盖这个常数。
+
+**当前各处的值**（已核对）：
+
+| 位置 | 值 | 状态 |
+| --- | --- | --- |
+| `firmware/Core/Inc/encoder.h` | `WHEEL_DIAMETER_M 0.060f`（直径） | ✅ |
+| `firmware/Core/Src/remote_control.c` | `wheel_radius = 0.030f` | ✅ 刚修 |
+| `ros2_ws/src/mcr_bringup/src/mcr_hardware_interface.cpp` | `0.030` | ✅ |
+| `ros2_ws/src/mcr_description/urdf/mcr.urdf.xacro` | `0.030` | ✅ |
+| `tools/stm32_uart_sim.py` | `WHEEL_RADIUS_M = 0.030` | ✅ |
+| `ros2_ws/src/mcr_bringup/test/test_mecanum_kinematics.cpp` | **`0.0325`** | ⚠️ 见 T5 |
+
+**要做的**：扩展 `check_calibration_constants.sh`，让上面前五处的轮径不一致时 CI 失败。
+
+注意 `encoder.h` 存的是**直径 0.060**，其余是**半径 0.030**——守卫要么分别匹配各自的字面量，要么在脚本里做换算。**别为了统一而去改 `encoder.h` 的语义**，那个常数的名字和用途是对的。
+
+**验收**：故意把五处中任意一处改错，`Firmware Tests` 失败；改回后恢复绿。验证完记得**改回正确值**。
+
+---
+
+## T5：判断测试夹具里的 0.0325 是不是遗留错误
+
+`ros2_ws/src/mcr_bringup/test/test_mecanum_kinematics.cpp:25` 用 `p.wheel_radius = 0.0325;`。
+
+**需要你判断**：纯运动学单元测试用什么半径其实无所谓（只要期望值自洽），但这个数恰好是**那个已被推翻的旧轮径**。两种可能：
+
+- 它只是个任意夹具值 → 那就**加一行注释说明"此处数值任意，与实测轮径无关"**，免得下次又有人以为它是遗留 bug（比如这次）
+- 它本意是代表真车 → 改成 0.030 并同步期望值
+
+选哪条你判断，但**必须留下痕迹**，别让它继续保持这种"看不出是有意还是遗漏"的状态。
+
+**验收**：`colcon test` 通过；该数值的意图在代码里写明白了。
+
+---
+
+## T6：在有 Docker 的环境复核 SIL 端到端
+
+T1 改完模拟器后，**`tools/verify_sil.sh` 一直没在真正的 ROS 容器里跑过**（当时开发机没有 Docker）。`project-status.md` 里如实记着这一条待办。
+
+**要做的**：在有 Docker 的机器上按 `docker/README.md` 起容器，跑通 `colcon build` → 启动 `tools/stm32_uart_sim.py` → `ros2 launch mcr_bringup robot.launch.py serial_device:=<pty>` → `bash tools/verify_sil.sh`。
+
+**验收**：`/odom` 能采到数据；把结果（成功或失败的完整输出）写进 `project-status.md`，把那条待办**改成已验证或记下失败原因**。跑不了就明说环境不具备，别留着含糊。
+
+---
+
+## T7：为 M3 准备四轮速度控制模块（可选，工作量较大）
+
+**背景**：M2 只做了单轮速度环，跑在真机台架 `pid_step_main.c` 里。M3 要四轮闭环，需要一个能被 SIL 和真机共用的模块。
+
+**要做的**：在 `firmware/Core/Src/` 加一个四轮速度控制器（四个 `pid_ctrl_t` 实例 + 目标速度分配 + 输出限幅），配主机单元测试。**纯逻辑，不碰任何外设**。
+
+**必须遵守的实测前提**（来自 `hardware-closed-loop-roadmap.md`）：
+
+- 起始增益 `Kp=100 / Ki=300 / Kd=0`（M2 实测，空载、台面与电池供电下均验证）
+- **抗积分饱和**：`pid.c` 钳位的是积分本身而非积分项，`integral_max` 必须按 `out_max / Ki` 推导，不能写死。这个坑 M2 已经踩过一次
+- **四轮一致性 4.9%、RR 最慢**——接口要允许**每轮独立增益**，不要写死成共用一组
+
+**验收**：主机单测覆盖"四轮同时跟随目标速度""饱和时积分不失控""某轮增益单独调整生效"；CTest 通过。
+
+---
+
+## 完成后
+
+- [ ] T4 完成并 push，`project-status.md` 里写明守卫现在覆盖哪些常数
+- [ ] T5 完成并 push
+- [ ] T6 完成并 push，更新 `project-status.md` 里那条 SIL 待办
+- [ ] T7（若做）完成并 push
+- [ ] 确认两个 CI workflow 都绿：`gh run list`
