@@ -76,8 +76,8 @@ This proves open-loop GPIO/PWM/bridge mapping, encoder direction and
 counting, and speed feedback in engineering units. The `remote_pid_drive`
 target has additionally passed suspended four-wheel forward/reverse/strafe/
 rotation checks and low-speed ground basic-motion checks. Long-duration
-loaded tracking, quantified ground performance, and M3 safety re-validation
-remain unverified.
+loaded tracking and quantified ground performance remain unverified; K9 and
+remote-loss safety were re-verified on the M3 image.
 
 **Measuring these counters:** `st-util` resets the target both on start
 and when GDB attaches, so halting right after attach samples a chip that
