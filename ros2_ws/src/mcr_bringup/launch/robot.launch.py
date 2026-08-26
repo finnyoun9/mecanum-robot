@@ -28,7 +28,7 @@ def generate_launch_description():
 
     # --- Launch args ---
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-    serial_dev   = LaunchConfiguration('serial_device', default='/dev/ttyAMA10')
+    serial_dev   = LaunchConfiguration('serial_device', default='/dev/ttyAMA0')
 
     # Jazzy requires an explicit ParameterValue for substitution-based string
     # params (robot_description is URDF, which is not valid YAML).
@@ -147,7 +147,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('serial_device', default_value='/dev/ttyAMA10'),
+        DeclareLaunchArgument('serial_device', default_value='/dev/ttyAMA0'),
 
         robot_state_pub,
         controller_manager,

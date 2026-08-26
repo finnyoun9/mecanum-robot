@@ -70,8 +70,9 @@
 **Raspberry Pi 5 外设：**
 - GPIO Pin 2/4 (5V) ← Mini560 #1 输出
 - GPIO Pin 6 (GND) ← Mini560 #1 GND
-- GPIO 14/15 (UART) ← STM32 UART1 (TX/RX 交叉)
-- USB 口 A: LD06 激光雷达（UART-to-USB 适配板）
+- GPIO 14/15 (UART) ← 排针唯一 UART `/dev/ttyAMA0`（=/dev/serial0，230400, 8N1）。**目前接 LD06**；STM32 的 ROM 串口引导/通讯也走这对脚（GPIO15←PA9），两者物理上只能接一个，不能同时
+- LD06 激光雷达：`P5V→5V`、`GND→pin6(共地)`、`DATA(TXD)→pin 10 (GPIO15/RXD)`、`CTL` 悬空 → `/dev/ttyAMA0`（实测 0x54 0x2C 帧、47 字节、CRC-8 poly 0x4D，见 project-status）
+- USB 口 A: 暂空（LD06 不是走 USB，是用 GPIO15 直连）
 - USB 口 B: USB 摄像头
 
 ---

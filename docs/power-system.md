@@ -176,7 +176,7 @@ AMS1117-3.3 额定 800 mA–1 A，压降功耗约 0.3 W，SOT-223 完全扛得�
 | --- | --- | --- |
 | 车端 NRF24L01+ 电源端 | 只接 `VCC/GND` 即使 3.3 V 由正常跌至 2.x V、再约 1.x V；PC13 熄灭，芯片发热；pin 1/2 导通 | 模块已拔下、待换；不能再接入新板 |
 | ST-Link / SWD 交叉验证 | 同一 ST-Link 与同一组线能读手柄板；车板在 100 kHz 热插拔、复位保持连接均报 `chipid 0x000` | 排除调试器和这组线的整体故障 |
-| STM32 ROM 串口引导 | `BOOT0` 实测 3.3 V；Pi `GPIO14/TX → PA10`、`GPIO15/RX ← PA9`、共地；115200 至 9600 的握手均超时 | Pi `/dev/serial0` 为 `ttyAMA10`，serial-getty 已关闭 |
+| STM32 ROM 串口引导 | `BOOT0` 实测 3.3 V；Pi `GPIO14/TX → PA10`、`GPIO15/RX ← PA9`、共地；115200 至 9600 的握手均超时 | Pi `/dev/serial0` = **`ttyAMA0`**（GPIO14/15，排针唯一 UART；`ttyAMA10` 是 RP1 内部串口不接排针，别用）；serial-getty 已关闭 |
 | 最小供电下的 `RES` | 拔除外围、仅 Micro-USB 供电时主 3.3 V 稳定；`RES` 对 GND 为 0.47 V；按 Reset 为 0 V、松开回 0.47 V | 正常空闲 `NRST` 应接近 3.3 V |
 | 外部上拉试验 | 以 1 kΩ 将 3.3 V 拉到 `RES` 后，`RES` 仅升至 0.68 V | 复位节点存在强低电平负载；禁止把 3.3 V 直接短接到 `RES` |
 

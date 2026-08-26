@@ -29,7 +29,7 @@ static constexpr int    SERIAL_BAUD_DEFAULT   = 921600;
 static constexpr double EDGES_PER_WHEEL_REV = 448.0;
 
 MCRHardwareInterface::MCRHardwareInterface()
-: serial_device_("/dev/ttyAMA10")   /* Pi 5 hardware UART (see docker/run.sh) */
+: serial_device_("/dev/ttyAMA0")   /* Pi 5 header UART = /dev/serial0 (GPIO14/15) */
 , serial_baud_(SERIAL_BAUD_DEFAULT)
 , joints_(4)
 , odom_x_(0.0), odom_y_(0.0), odom_yaw_(0.0)
