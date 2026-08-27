@@ -131,7 +131,7 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
   `cv2.VideoCapture(0)`、相对路径 `code/yolov8n.onnx` 和 `cv2.imshow()`，不适合当前
   IMX219/libcamera + headless 部署；本次仅完成独立真机验证，未把临时测试脚本提交进仓库。
 
-### M4：Pi↔STM32 真机链路 bring-up（2026-08-28，在途，链路未闭合）
+### M4：Pi↔STM32 真机链路 bring-up（2026-08-28，**链路已闭合**）
 
 - **`rtos_drive` 固件目标已就绪（SIL/编译验证，尚未真机验收）。** `make TARGET=rtos_drive RTOS=1`
   把 SIL 验证过的完整 Core/Src 应用搬上真板：CommTask（USART1 PA9/PA10 @921600，DMA1 ch4 TX /
@@ -170,15 +170,35 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
 - **Pi 侧已实测洗清：** ttyAMA0（RP1 PL011，物理 `0x1f00030000`）参考时钟 **50 MHz**；
   921600 实配 IBRD=3/FBRD=25 → **921,659 baud（+0.06%）**，LCR_H=0x70（8N1+FIFO），
   CR 中 UARTEN/TXE/RXE 均使能；ttyAMA0 上无 console/getty 占用。
-- **现场待恢复（2026-08-28）：** ST-Link 在调试中从 USB 总线掉死（`ioreg` 仅剩序列号为空的
-  幽灵设备，`st-info --probe` 找到 0 个），macOS 无法软件复位，**需物理重插 ST-Link USB**；
-  芯片停在 lockup/halted，**需整车上电**。
-- **下一步（按序）：** ① 重插 ST-Link，`st-info --probe` 确认；② 复核 Pi↔STM32 三线
-  （Pi pin8/GPIO14 TX→**PA10 RX**，pin10/GPIO15 RX←**PA9 TX**，**GND 必须共地**，万用表量
-  导通）；③ 上电后先在 Pi 跑 `tools/uart_baud_sweep.py` 听 STM32 真实波特率，再 SWD 读
-  RCC_CFGR / USART1 BRR 终判时钟（健康值：CFGR≈`0x001C040A` = HSI/2×PLL16→64 MHz、
-  PCKL2=64 MHz；BRR=`0x00000457` = 921,691 baud）；④ 链路通后用短洪流复现 lockup，
-  **halt 后先抓故障寄存器再复位**。
+- **✅ 已恢复并闭合（2026-08-28 实测）。** 上面"待恢复/下一步"的 ①②③ 均已完成：
+  - ① 物理重插 ST-Link 后 `st-info --probe` 正常：`chipid 0x410`、flash `131072`、
+    sram `20480`、V2J27S6（序列号 `...02361C43`）。**连测三次读数完全一致**（按项目判据即健康），
+    与故障板的 `chipid 0x000` 完全不同。
+  - ② Pi↔STM32 三线万用表已复核导通：`pin8↔PA10`、`pin10↔PA9`、共地。固件侧引脚配置见
+    `rtos_drive_main.c:238-246`（PA9 = `GPIO_MODE_AF_PP`，PA10 = `GPIO_MODE_INPUT`）。
+  - ③ **芯片已自 lockup 恢复**：PC=`0x08002f06`→`0x08002f58`（在 flash 正常代码区且推进）、
+    PSP=`0x20001ce0`、xPSR=`0x61000000`（Thread 模式）、目标电压 3.228 V。
+  - **时钟已终判正常**：CFGR=`0x0038040A` → SW=PLL、PLLSRC=HSI/2、PLLMUL=×16 →
+    **SYSCLK=PCLK2=64 MHz**；BRR=`0x45`（mant=4/frac=5，USARTDIV=4.3125）→
+    **927,536 baud**，相对 921600 偏 **+0.64%**，在 UART 容限内。
+  - ⚠️ **修正本文档此前记错的"健康值"**：原记 CFGR `0x001C040A` / BRR `0x00000457` 解出来是
+    **36 MHz / 32,403 baud**，与项目"HSI+PLL @ 64 MHz"基线自相矛盾，那组数是错的。
+    正确健康值为 **CFGR `0x0038040A` / BRR `0x45`**。
+  - **波特率扫描（Pi 侧只听不发）**：921600 得 `8558 B/3s`（2853 B/s）、**A5 5A 帧头 155 个**、
+    仅 2 个 `0xFF`，标记 CLEAN；460800/230400/115200 均 0 个帧头。
+  - **双向链路实测 OK**：`tools/link_check.py` 12 秒 → **有效帧 615、CRC 失败 0**、
+    ODOM **50.2 Hz**（`rtos_drive` 设计值 50 Hz，工具默认按 20 Hz 的 probe 目标提示，
+    故那条 `outside 15-25 Hz` 警告不是故障）、心跳 **ACK 12/12**、`RESULT: LINK OK`。
+  - **此前"每字节帧错误 45772"的真因是两个已修 bug，不是硬件**：ROS 2 侧
+    `serial_protocol.cpp` 的 B0 挂断（`8b9a977` 已修）+ 芯片当时停在 lockup。
+- **四路编码器已确认全部有信号（2026-08-28，手转实测）。** 经 ODOM 帧读取累计计数，
+  手动带动底盘后四轮累计绝对位移：FL 365、FR 397、RL 2129、RR 1768，量级与手转幅度相符；
+  FL 正反向均出现过（-989 / +256），软件 EXTI 解码工作正常。
+  **未做**：逐轮受控转动以核验"向前=正"的符号一致性（历史上已验过并为统一符号在 FL 线束上
+  对调过 A/B），留待电机驱动板到货后随带载实测一并复核。
+- **仍未解决（独立于链路的真 bug）：** 洪流测试末期的 Cortex-M3 lockup
+  （PC=0xFFFFFFFE、MSP=0xFFFFFFD8、CFSR=UNDEFINSTR+IACCVIOL）尚未定位；
+  下次复现时 **halt 后先抓 CFSR/HFSR/BFAR/PSP/ICSR 再复位**。
 
 
 ### 已实测（真机）
