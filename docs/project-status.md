@@ -121,7 +121,48 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
 - **实测验证（2026-08-27，容器内）**：`ldlidar_stl_ros2` + `robot_state_publisher` 起来后，
   `/scan` 实测 **9.77 Hz**（≈10 Hz），`frame_id: laser_link`。GPIO14/15 的
   `/dev/ttyAMA0` 留给 STM32，雷达走 CH340 `/dev/ttyUSB0` 不再抢占。
-  **SLAM（`/scan` + TF → `/map`）尚未跑通**，是下一步（P3）。
+  **SLAM（`/scan` + TF → `/map`）已跑通**，见下方 M5。
+
+### M5：ROS 2 整车栈闭合 + SLAM 出图（2026-08-28，实测）
+
+- **`ros2_control` 硬件接口已激活并稳定运行。** `MCRSystem` 状态 `active`、四个轮速命令
+  接口 `available/claimed`，三个控制器（`mecanum_drive_controller`、
+  `joint_state_broadcaster`、`imu_sensor_broadcaster`）全部 `active`。实测
+  `/mecanum_drive_controller/odometry` **99.999 Hz**、`/odometry/filtered` **50.001 Hz**、
+  `/scan` **~10 Hz**；`odom → base_footprint` TF 由 EKF 稳定发布（静止时全零，符合预期）。
+- **修掉两个 ROS 2 侧真 bug（此前每次启动几秒后硬件组件即被停用）：**
+  - **`serial_protocol.cpp` 的 B0 挂断实际一直存在。** Linux 的线速存放在 `c_cflag` 的
+    `CBAUD` 位域里，而 `open()` 中先 `cfsetospeed()` 再 `tty.c_cflag = CS8|CREAD|CLOCAL`
+    这个**赋值**把刚写入的波特率位清成 0，即 **B0（modem 挂断）**。`8b9a977` 只修了
+    "用 B 常量替代裸整数"这一半，赋值顺序仍在清掉结果。诊断依据：`TIOCOUTQ` 实测
+    内核 TX 队列**恒为 16384（满）**、`write()` 恒返回 `EAGAIN`，而同端口同 termios 的
+    Python 写入在 100 Hz 下 `outq=0`、1000 次零失败。已改为**先设标志位、最后设波特率**，
+    并 `tcgetattr` 回读校验速率确实生效（`tcsetattr` 可能成功却静默忽略不支持的速率）。
+  - **写入背压被当成致命错误。** 端口是 `O_NONBLOCK`，部分写入/`EAGAIN` 属于背压
+    （STM32 处于上电安全锁存期间不排水时必然出现），旧代码据此 `return ERROR`，
+    直接触发 `controller_manager` 停用整个组件及其所有控制器。现改为：`write_bytes`
+    对剩余字节做有限轮询（整帧写出或丢弃），且仅在**连续**失败达 100 次
+    （100 Hz 下约 1 s）才升级为 ERROR——彼时 STM32 自身的通信看门狗也会停机。
+- **SLAM 已出图（`slam_toolbox`）。** 实测 `/map` 为 **87×62 栅格、分辨率 0.05 m**、
+  `frame_id: map`、发布率 **1.000 Hz**（即配置的 `map_update_interval: 1.0`），
+  `map → odom` TF 正常，日志出现 `Registering sensor: [Custom Described Lidar]`。
+- **根因：`async_slam_toolbox_node` 是 LifecycleNode，却被当普通 `Node` 启动**，
+  因此停在 `unconfigured` 不动——只打印 `Node using stack size ...` 后再无输出，
+  既不订阅 `/scan` 也不发布 `/map`。**此状态下 `ros2 param get` 会报 "not set"，
+  看起来像 YAML 没加载，其实只是节点未 configure 的假象**（YAML 路径与节点名均正确）。
+  已改为 `LifecycleNode` 并驱动转换：configure 挂在 `OnProcessStart`
+  （裸 `EmitEvent` 会在节点生命周期服务就绪前发出而被静默丢弃）、activate 链在
+  `OnStateTransition(configuring → inactive)`（configure 要加载 Ceres 求解器插件，
+  Pi 上实测约 10 s，不能用固定 sleep）。注意 `OnStateTransition` 在
+  `launch_ros.event_handlers` 而非 `launch.event_handlers`。
+- **`navigation.launch.py` 新增 `nav2:=` 与 `rviz:=` 开关。** 建图只需 `/scan` 与
+  `odom→base_footprint` TF，拆开后可单独验证 SLAM——这也是目前唯一能跑 SLAM 的路径，
+  因为 `nav2_bringup` 用 `PythonExpression` 求值 `slam` 参数，而 `'true'` 不是 Python
+  字面量（`True` 才是），带上 Nav2 会抛 `NameError: name 'true' is not defined`。
+  **Nav2 本身因此仍未验证。**
+- **未验证/须注意**：以上均为**静止**状态下的链路与建图验收，**车未移动**，因此
+  没有回环、没有真实位姿轨迹，不能据此判断建图精度或里程计符号是否正确；
+  逐轮"向前=正"的符号一致性仍待电机驱动板到货后随带载实测复核。
 - **IMX219 CSI 相机可用。** Pi 识别为 3280×2464、10-bit RGGB；640×480 `RGB888`
   连续采集实测 30.56 FPS，静态拍照正常。宿主机以 `Picamera2 + ONNX Runtime 1.23.2`
   运行仓库 `yolov8n.onnx`，20 帧连续测试平均推理 163.8 ms、端到端 6.05 FPS；当前场景
