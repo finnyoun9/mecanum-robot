@@ -5,6 +5,8 @@
 
 #include "mcr_bringup/mcr_hardware_interface.hpp"
 
+#include <chrono>
+#include <cerrno>
 #include <cmath>
 #include <cstring>
 #include "pluginlib/class_list_macros.hpp"
@@ -277,9 +279,17 @@ hardware_interface::return_type MCRHardwareInterface::write(
   float w4 = static_cast<float>(joints_[3].command);
 
   if (!serial_->send_velocity_command(w1, w2, w3, w4)) {
-    RCLCPP_WARN_THROTTLE(rclcpp::get_logger("MCRHardwareInterface"),
-      *rclcpp::Clock::make_shared(), 1000,
-      "Failed to send velocity command via serial");
+    /* Manual throttle: RCLCPP_WARN_THROTTLE needs a persistent clock
+     * object — a dereferenced Clock::make_shared() temporary dangles and
+     * segfaults inside Clock::now(). */
+    static std::chrono::steady_clock::time_point last_warn;
+    const auto now_tp = std::chrono::steady_clock::now();
+    if (now_tp - last_warn > std::chrono::seconds(1)) {
+      last_warn = now_tp;
+      RCLCPP_WARN(rclcpp::get_logger("MCRHardwareInterface"),
+        "Failed to send velocity command via serial: %s",
+        std::strerror(errno));
+    }
     return hardware_interface::return_type::ERROR;
   }
 
