@@ -41,10 +41,10 @@
          ▼                                     ▼
     [12V 总线]                    ┌─────────────────────────┐
          │                        │  Raspberry Pi 5         │
-    ┌────┴────┐                   │  (Ubuntu 24.04 + ROS2)  │
+    ┌────┴────┐                   │  (Pi OS + ROS2 Docker)  │
     │ 4个电机 │                   │                         │
     │ +编码器 │                   │ LD06 激光雷达(UART-USB) │
-    └────┬────┘                   │ USB 摄像头              │
+    └────┬────┘                   │ IMX219 CSI 摄像头       │
          │                        │ 5V GPIO 供电            │
     TB6612 ×2                      └─────────────────────────┘
     H-Bridge
@@ -61,19 +61,26 @@
 **信号连接：**
 - STM32 GPIO (DIR) → TB6612 方向控制引脚 (A, B)
 - STM32 TIM PWM → TB6612 PWM 使能引脚 (PWMA, PWMB)
-- STM32 TIM 编码器模式 → 电机编码器 (A, B 相位)
-- STM32 I2C1 → MPU6050 (SCL, SDA)
-- STM32 I2C2 → VL53L0X (SCL, SDA)（可选：某些 ToF 模块支持 UART，但 I2C 更常见）
+- STM32 GPIO EXTI + 普通输入 → 四路电机编码器 (A, B 相位)，使用软件正交解码
+- STM32 I2C2（PB10/PB11）→ MPU6050 + VL53L0X 共用 SCL/SDA（地址分别为 0x68/0x29）
 - STM32 UART1 (TX/RX + DMA) ←→ Raspberry Pi UART (GPIO 14/15)
 - 共地：所有模块 GND 连接到电池负极
 
 **Raspberry Pi 5 外设：**
 - GPIO Pin 2/4 (5V) ← Mini560 #1 输出
 - GPIO Pin 6 (GND) ← Mini560 #1 GND
-- GPIO 14/15 (UART) ← 排针唯一 UART `/dev/ttyAMA0`（=/dev/serial0，230400, 8N1）。**目前接 LD06**；STM32 的 ROM 串口引导/通讯也走这对脚（GPIO15←PA9），两者物理上只能接一个，不能同时
-- LD06 激光雷达：`P5V→5V`、`GND→pin6(共地)`、`DATA(TXD)→pin 10 (GPIO15/RXD)`、`CTL` 悬空 → `/dev/ttyAMA0`（实测 0x54 0x2C 帧、47 字节、CRC-8 poly 0x4D，见 project-status）
-- USB 口 A: 暂空（LD06 不是走 USB，是用 GPIO15 直连）
-- USB 口 B: USB 摄像头
+- GPIO 14/15 (UART) 是排针唯一可用串口 `/dev/ttyAMA0`（=`/dev/serial0`），**保留给 STM32 USART1**：Pi pin 8/GPIO14 TX → STM32 PA10 RX，Pi pin 10/GPIO15 RX ← STM32 PA9 TX，并共地。项目协议默认 921600 8N1，但真机双向链路尚未闭合。
+- LD06 改走 CH340 USB-TTL，避免与 STM32 抢占 `/dev/ttyAMA0`：`P5V→Pi 5V`、`GND→USB-TTL GND`、`DATA/TX→USB-TTL RXD`、`CTL` 悬空；USB-TTL 的 `TXD` 和 `VCC/5V` 不接。2026-08-27 实测枚举为 `/dev/ttyUSB0`，稳定路径 `/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0`，230400 8N1。
+- IMX219 8MP 相机接 Pi 5 的 CAM/DISP MIPI-CSI 接口，使用 Pi 5 对应的 22-pin 排线；不是 USB 摄像头。断电后再插拔排线，并确认触点朝向插座触点。
+
+LD06 USB-TTL 接线速查：
+
+| LD06 | CH340 USB-TTL | 说明 |
+| --- | --- | --- |
+| P5V | 不接转换器 VCC；单独接 Pi 5V | 避免两路 5V 反向供电 |
+| GND | GND | USB-TTL 与雷达共地 |
+| DATA/TX | RXD | 单向雷达数据，不能接 TXD |
+| CTL | 悬空 | 当前无需外部控制 |
 
 ---
 
@@ -295,8 +302,8 @@ TB6612 每路电机的方向由 **两个输入脚**共同决定（真值表）�
 | LD06 激光雷达 | 5V | 0.35A | 0.5A | 2W |
 | 电机 ×4 (正常运行) | 12V | 0.5A ×4 | — | 24W |
 | 电机 ×4 (堵转尖峰) | 12V | — | 1.5A ×4 | 72W |
-| USB 摄像头 | 5V | 0.2A | 0.3A | 1W |
-| TB6612 逻辑电路 ×2 | 5V | 0.01A | — | 忽略 |
+| IMX219 CSI 摄像头 | 由 CSI 接口供电 | ~0.2A | ~0.3A | ~1W |
+| TB6612 逻辑电路 ×2 | 3.3V | 0.01A | — | 忽略 |
 | MPU6050 + VL53L0X | 3.3V | 0.01A | — | 忽略 |
 | **系统合计** | — | **~5A @ 12V** | **~8A @ 12V** | **~40W 典型** |
 
@@ -357,14 +364,14 @@ TB6612 有两组电源引脚，设计上已隔离电机噪声：
 - [ ] 打开主电源开关
 - [ ] **观察 Mini560 指示灯**（如有）确认通电
 - [ ] 连接 HDMI 和键盘到 Pi 5，确认系统启动
-- [ ] 检查 LD06 激光雷达 USB 连接，运行 `ros2 topic echo /scan` 验证点云输出
+- [ ] 检查 CH340 与 `/dev/ttyUSB0`，运行 LD06 驱动后用 `ros2 topic hz /scan` 验证应稳定约 10 Hz
 - [ ] **不接电机的情况下，关键是验证 Pi 和 LD06 稳定工作**
 
 ### 第三步：连接 STM32，验证 MCU 通信
 
 - [ ] 用 USB 线连接 STM32 开发板的 USB 接口（或通过 Mini560 #2 的 5V 供电）
-- [ ] 在 Pi 上运行 `sudo dmesg | tail -20` 检查 UART 设备是否识别（通常 `/dev/ttyS0` 或 `/dev/ttyAMA0`）
-- [ ] 运行串口监听工具（如 `picocom -b 115200 /dev/ttyS0`）
+- [ ] 在 Pi 上运行 `ls -l /dev/serial0 /dev/ttyAMA0`，确认 `/dev/serial0` 指向排针 UART；它不是热插拔 USB 设备，不以 `dmesg` 枚举为验收依据
+- [ ] 运行串口监听工具（如 `picocom -b 921600 /dev/ttyAMA0`），波特率与 STM32 固件保持一致
 - [ ] 在 STM32 上发送心跳包（HEARTBEAT 帧，CMD_ID = 0x1F），验证 Pi 接收
 - [ ] 确认 I2C 总线正常：`i2cdetect -y 1` 应显示 MPU6050 (0x68) 和 VL53L0X (0x29)
 

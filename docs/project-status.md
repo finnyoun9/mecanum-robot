@@ -1,6 +1,6 @@
 # 项目状态与协作基线
 
-> **最后更新：2026-08-26。** 改动了真机状态、固件结构或标定常数之后，**请同步更新本文档**——多人或多端并行推进时，过时的基线会让其他开发者基于错误前提做出判断。
+> **最后更新：2026-08-27。** 改动了真机状态、固件结构或标定常数之后，**请同步更新本文档**——多人或多端并行推进时，过时的基线会让其他开发者基于错误前提做出判断。
 
 ## 协作机制
 
@@ -36,7 +36,7 @@
 
 ---
 
-## 当前真实状态（2026-08-25）
+## 当前真实状态（2026-08-27）
 
 ### 当前硬件故障（2026-08-26，实测）
 
@@ -54,6 +54,28 @@
   复位电容/上拉网络或 MCU `NRST` 引脚中的具体故障件，**不能写成“MCU 已确认烧毁”**。
 - 上述故障发生前已经验收的遥控和 M3 闭环结果仍是历史真机验证记录；在更换车端板、
   完成最小系统自检并重新烧录前，不能把它们视为当前可用的真机能力。
+
+### Pi 侧传感器（2026-08-27，实测）
+
+- **LD06 + CH340 USB-TTL 链路可用。** 最终接法为 `P5V→Pi 5V`、`GND→USB-TTL GND`、
+  `DATA/TX→USB-TTL RXD`、`CTL` 悬空；USB-TTL 的 `TXD/VCC` 不接。适配器枚举为
+  `/dev/ttyUSB0`，稳定路径为 `/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0`。
+  230400 8N1 连续读取 3 秒得到 53504 bytes、1139 个 `54 2c` 帧头，相邻 1138 个帧间距
+  全部为 47 bytes。官方 `ldlidar_stl_ros2` 的 LD06 配置实测 `/scan` 稳定 10.00 Hz，
+  量程字段 0.02–25 m；`laser_geometry` 转换后的 `/ld06/points` 也为 10 Hz，抽样一帧
+  421 个有效点、frame 为 `base_laser`。这是平面二维点云（z=0），不是 3D 点云。
+- **LD06 尚未正式集成到仓库 bringup。** 驱动当前构建在 Pi 的外部工作区
+  `/home/pi/ldlidar_ws`；GCC 13 下需恢复其 `logger/log_module.h` 中被注释的
+  `<pthread.h>`。仓库 `robot.launch.py` 里的雷达块仍被注释，且保留旧的 LD19 参数，
+  下一步应改为 LD06 并接入统一 launch。GPIO14/15 的 `/dev/ttyAMA0` 现已释放给 STM32。
+- **IMX219 CSI 相机可用。** Pi 识别为 3280×2464、10-bit RGGB；640×480 `RGB888`
+  连续采集实测 30.56 FPS，静态拍照正常。宿主机以 `Picamera2 + ONNX Runtime 1.23.2`
+  运行仓库 `yolov8n.onnx`，20 帧连续测试平均推理 163.8 ms、端到端 6.05 FPS；当前场景
+  两个显示器在 20 帧中共得到 38 个 `tv` 检测框，最高置信度 0.741，另一次人体局部检测
+  置信度 0.883。该结果证明 Pi 5 CPU 可承担低速视觉检测，不代表已完成 ROS 2 相机节点。
+- **仓库 CSI 入口仍待实现。** `perception/detection/yolo_detect.py` 目前使用
+  `cv2.VideoCapture(0)`、相对路径 `code/yolov8n.onnx` 和 `cv2.imshow()`，不适合当前
+  IMX219/libcamera + headless 部署；本次仅完成独立真机验证，未把临时测试脚本提交进仓库。
 
 ### 已实测（真机）
 
@@ -118,7 +140,9 @@
 - `lx = 0.10 m`（半轴距）和 `ly = 0.12 m`（半轮距）仅为默认估计值，均未实测；
   应量前后轮、左右轮的轴中心距后各除以 2，再替换 ROS 2 与模拟器中的默认值。
 - `firmware_arch_main()` **不能在真机跑**：缺 UART/I2C 的 MSP 初始化；`motor.c` 引脚映射目前由各 HW target 在初始化时传入，不是静态表。
-- NRF24L01、IMU、ToF、Nav2 均未上真机。
+- IMU、ToF、Nav2 尚未上真机；LD06 和 IMX219/YOLO 已分别完成 Pi 侧独立验证，但还没有
+  与 `robot.launch.py`、真实里程计、TF 和 SLAM 形成整车链路。NRF24L01 曾完成真机验收，
+  当前车端模块已故障下线，不能写成当前可用。
 - 机械臂：只有 host protocol 与 SIL 骨架，硬件缺货未到（智能总线舵机版），见 [manipulator/docs/decision-log.md](../manipulator/docs/decision-log.md)。
 
 ---

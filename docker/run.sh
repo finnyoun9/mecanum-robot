@@ -48,12 +48,11 @@ elif ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
     build
 fi
 
-# Candidate serial devices — STM32 link and LD06 LiDAR. Pi 5's UART
-# enumerates as ttyAMA10 (not ttyAMA0, unlike earlier Pi models, because
-# of the RP1 I/O chip); ttyACM0 covers boards that expose USB-CDC serial
-# directly instead of going through a USB-to-serial adapter.
+# Candidate serial devices — STM32 link and LD06 LiDAR. On this Pi 5,
+# GPIO14/15 is /dev/ttyAMA0 (/dev/serial0); /dev/ttyAMA10 is RP1-internal
+# and does not reach the header. ttyACM0 covers boards that expose USB-CDC.
 DEVICE_ARGS=()
-for dev in /dev/ttyAMA10 /dev/ttyAMA0 /dev/ttyUSB0 /dev/ttyACM0; do
+for dev in /dev/ttyAMA0 /dev/ttyUSB0 /dev/ttyACM0; do
     if [ -e "$dev" ]; then
         DEVICE_ARGS+=(--device "$dev:$dev")
     fi

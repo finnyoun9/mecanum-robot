@@ -46,13 +46,13 @@ apt packages).
 
 ## Devices
 
-`docker/run.sh` probes for `/dev/ttyAMA10` (Pi 5's hardware UART — the
-STM32 link, once wired), `/dev/ttyUSB0` (LD06 LiDAR, once connected via
-its USB-serial adapter), and `/dev/ttyACM0` (fallback if the STM32 board
-uses USB-CDC serial directly). Only devices that actually exist at
-startup get passed through, so the script won't fail before your
-hardware is wired up — it just runs without that device until you
-re-launch.
+`docker/run.sh` probes for `/dev/ttyAMA0` (the Pi 5 header UART reserved
+for the STM32 link), `/dev/ttyUSB0` (the LD06 LiDAR through its CH340
+USB-TTL adapter), and `/dev/ttyACM0` (fallback if an STM32 board exposes
+USB-CDC serial directly). `/dev/ttyAMA10` is an RP1-internal UART and is
+not the GPIO14/15 header connection. Only devices that actually exist at
+startup get passed through, so the script won't fail before hardware is
+wired up; re-launch the container after connecting a new device.
 
 ## Networking
 

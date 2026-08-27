@@ -27,16 +27,18 @@ The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**.
 - **URDF 模型** ✅ — 4 麦克纳姆轮 + 传感器模型,已通过 xacro 展开并在 RViz2 中渲染(见下方截图)
 - **串口二进制协议** ✅ — 自定义协议 + CRC16-MODBUS 校验,Pi 与 STM32 共享的 C 库
 - **麦克纳姆轮运动学** ✅ — 正/逆运动学解算 + 单元测试(gtest,固件内也有 C 版)
-- **NRF24L01 无线遥控** 🚧 — 接收驱动、摇杆映射、C 版逆运动学和 CI 单测已完成，待实物收发与电机联调(见 [docs/remote_control.md](docs/remote_control.md))
+- **NRF24L01 无线遥控** ⚠️ — 实物收发、K1/K9、250 ms 失联停车和低速全向控制曾完成真机验收；当前车端 NRF24L01 电源短路、Blue Pill 复位节点异常，待更换后复验(见 [docs/remote_control.md](docs/remote_control.md))
 - **ROS2 协议闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → STM32 UART 模拟器全链路打通；0.3 m/s 指令在协议模拟中得到 0.302 m/s 里程计，尚不是真实底盘结果
-- **STM32 FreeRTOS 固件** 🚧 — 4 路 PID 速度闭环框架已在 `firmware/`,真机联调待接线
+- **STM32 速度闭环** ✅ — 单轮 PI 和独立四轮闭环目标已完成空载与低速落地基础验收；完整 `firmware_arch_main()` 的 UART/I2C MSP 和长期带载测试仍未完成
 - **四轮开环真机控制** ✅ — 四个电机经 TB6612 已完成 6 V 空载正反转与方向一致性验证；正式供电方案见 [docs/power-system.md](docs/power-system.md)
 - **SIL 软件在环测试** ✅ — 固件编译为 Linux 原生可执行文件，Mock HAL + FreeRTOS 调度模拟器在 CI 中验证命令解析、PWM、编码器累积和里程计数据链；不替代真机 PID 性能测试(见 [docs/resume-highlights.md](docs/resume-highlights.md))
-- **Nav2 + SLAM** 🚧 — 配置骨架已就位,待与里程计/激光数据联调
+- **LD06 激光雷达** ✅ — 经 CH340 USB-TTL 在 Pi 5 上完成 230400 波特率原始帧、ROS 2 `/scan` 10 Hz 和二维 `PointCloud2` 10 Hz 实测；尚未合入项目 bringup
+- **IMX219 + YOLOv8n** ✅ — CSI 相机 640×480 连续采集超过 30 FPS；Pi 5 CPU 上 ONNX Runtime 实测约 6 FPS，显示器/人体目标可识别；当前为独立验证，尚未封装成 ROS 2 节点
+- **Nav2 + SLAM** 🚧 — 配置骨架已就位，LD06 `/scan` 已独立验证，待接入 bringup 并与真实里程计、TF 联调
 
-> 当前最重要的缺口是真实底盘闭环。`motor.c` 的 TIM/GPIO 映射尚未落到实际硬件，具体步骤和验收指标见 [真机闭环与 PID 调试路线](docs/hardware-closed-loop-roadmap.md)。
+> 当前最重要的缺口是更换故障 Blue Pill/NRF24L01，随后闭合 Pi↔STM32 真机 UART/里程计链路，并把已验证的 LD06 驱动正式接入 bringup。具体证据边界见 [项目状态](docs/project-status.md)。
 
-> 后续开发请先读 [docs/project-status.md](docs/project-status.md)，按 M0→M1→M2 推进，不要把 SIL 或协议模拟器结果写成真机结果。
+> 后续开发请先读 [docs/project-status.md](docs/project-status.md)，从当前 M4/Pi 侧集成缺口继续推进，不要把 SIL、协议模拟器或独立传感器测试写成整车闭环结果。
 
 > RViz2 渲染效果(无头 Xvfb 截图,1280×800):
 > - 静止渲染:[docs/screenshots/rviz2.png](docs/screenshots/rviz2.png)
@@ -121,10 +123,10 @@ mecanum-robot/
 | 底盘 Chassis | 4WD 麦克纳姆轮底盘 | 1 |
 | 电机 Motors | JGA25-370 编码器减速电机 | 4 |
 | 电机驱动 Driver | TB6612FNG 双路 H 桥 | 2 |
-| 激光雷达 LiDAR | LD19 / LD06 360° | 1 |
+| 激光雷达 LiDAR | LD06 360° + CH340 USB-TTL | 1 |
 | IMU | MPU6050 | 1 |
 | ToF 测距 | VL53L0X / VL53L1X | 1 |
-| 相机 Camera | 树莓派摄像头模块 (CSI 排线) | 1 |
+| 相机 Camera | IMX219 8MP (CSI 排线) | 1 |
 | 无线遥控 Remote | NRF24L01+ 收发模块 + 江协科技手柄 | 2 |
 | 电源 Power | 3S 锂电池 + 降压模块 | 1 套 |
 
@@ -184,6 +186,8 @@ python perception/detection/yolo_detect.py
 cd perception/laser_triangulation
 python point_cloud_scanner.py
 ```
+
+> 当前 `yolo_detect.py` 仍是通用 OpenCV `VideoCapture`/桌面显示版本；IMX219 真机验证使用宿主机 `Picamera2 + ONNX Runtime`，正式 CSI/headless 入口尚待合入，不能直接把上面的命令当作 Pi 5 已验收启动方式。
 
 ## Key Skills / 核心技术展示
 
