@@ -29,11 +29,35 @@ bool SerialProtocol::open(const std::string & device, int baudrate)
   fd_ = ::open(device.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (fd_ < 0) return false;
 
+  /* termios speed fields MUST be set with B<baud> constants. Passing the
+   * raw baud integer (as this code used to do) masked against CBAUD gives
+   * B0 — the kernel treats B0 as a modem hangup, which leaves the port in
+   * a hung state; writes then fail after the output buffer fills
+   * (~seconds at 100 Hz), observed as EAGAIN/ENOTTY and a deactivated
+   * hardware component. */
+  speed_t speed = B0;
+  switch (baudrate) {
+    case 9600:   speed = B9600;   break;
+    case 19200:  speed = B19200;  break;
+    case 38400:  speed = B38400;  break;
+    case 57600:  speed = B57600;  break;
+    case 115200: speed = B115200; break;
+    case 230400: speed = B230400; break;
+    case 460800: speed = B460800; break;
+    case 921600: speed = B921600; break;
+    default:
+      close();
+      errno = EINVAL;
+      return false;
+  }
+
   struct termios tty;
   std::memset(&tty, 0, sizeof(tty));
 
-  cfsetospeed(&tty, baudrate);
-  cfsetispeed(&tty, baudrate);
+  if (cfsetospeed(&tty, speed) < 0 || cfsetispeed(&tty, speed) < 0) {
+    close();
+    return false;
+  }
 
   /* 8N1, raw mode */
   tty.c_cflag = CS8 | CREAD | CLOCAL;
@@ -45,8 +69,11 @@ bool SerialProtocol::open(const std::string & device, int baudrate)
   tty.c_cc[VMIN]  = 0;
   tty.c_cc[VTIME] = 0;
 
+  if (tcsetattr(fd_, TCSANOW, &tty) != 0) {
+    close();
+    return false;
+  }
   tcflush(fd_, TCIFLUSH);
-  tcsetattr(fd_, TCSANOW, &tty);
 
   return true;
 }
