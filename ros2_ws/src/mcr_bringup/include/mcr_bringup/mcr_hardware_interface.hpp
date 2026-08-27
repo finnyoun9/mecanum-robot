@@ -115,6 +115,13 @@ private:
   /* --- Timing --- */
   rclcpp::Time last_read_time_;
   bool first_read_;
+
+  /* --- Serial link health --- */
+  /* A single failed write is backpressure, not a dead link; only a
+   * sustained run of them deactivates the component. At the 100 Hz
+   * control rate 100 failures is ~1 s. */
+  static constexpr int MAX_CONSECUTIVE_WRITE_FAILURES = 100;
+  int consecutive_write_failures_;
 };
 
 }  // namespace mcr_bringup

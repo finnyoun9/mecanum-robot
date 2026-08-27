@@ -6,7 +6,6 @@
 #include "mcr_bringup/mcr_hardware_interface.hpp"
 
 #include <chrono>
-#include <cerrno>
 #include <cmath>
 #include <cstring>
 #include "pluginlib/class_list_macros.hpp"
@@ -36,6 +35,7 @@ MCRHardwareInterface::MCRHardwareInterface()
 , joints_(4)
 , odom_x_(0.0), odom_y_(0.0), odom_yaw_(0.0)
 , first_read_(true)
+, consecutive_write_failures_(0)
 {
   mecanum_params_.wheel_radius = WHEEL_RADIUS_DEFAULT;
   mecanum_params_.lx = LX_DEFAULT;
@@ -287,12 +287,28 @@ hardware_interface::return_type MCRHardwareInterface::write(
     if (now_tp - last_warn > std::chrono::seconds(1)) {
       last_warn = now_tp;
       RCLCPP_WARN(rclcpp::get_logger("MCRHardwareInterface"),
-        "Failed to send velocity command via serial: %s",
-        std::strerror(errno));
+        "Failed to send velocity command via serial (%d consecutive)",
+        consecutive_write_failures_ + 1);
     }
-    return hardware_interface::return_type::ERROR;
+
+    /* Returning ERROR makes controller_manager deactivate this component
+     * and every controller using it, which is far too harsh for the
+     * transient backpressure a non-blocking serial port produces (the
+     * STM32 stops draining while it sits in its power-on safety latch).
+     * Only escalate once the link has failed for a sustained stretch —
+     * at the 100 Hz control rate this is ~1 s of no command getting
+     * through, and the STM32's own comms watchdog stops the motors
+     * independently in that case. */
+    if (++consecutive_write_failures_ >= MAX_CONSECUTIVE_WRITE_FAILURES) {
+      RCLCPP_ERROR(rclcpp::get_logger("MCRHardwareInterface"),
+        "Serial link down: %d consecutive write failures, deactivating",
+        consecutive_write_failures_);
+      return hardware_interface::return_type::ERROR;
+    }
+    return hardware_interface::return_type::OK;
   }
 
+  consecutive_write_failures_ = 0;
   return hardware_interface::return_type::OK;
 }
 

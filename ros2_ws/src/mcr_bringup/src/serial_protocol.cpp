@@ -89,8 +89,37 @@ void SerialProtocol::close()
 bool SerialProtocol::write_bytes(const uint8_t *data, size_t len)
 {
   if (fd_ < 0) return false;
-  ssize_t written = ::write(fd_, data, len);
-  return (written == static_cast<ssize_t>(len));
+
+  /* The port is O_NONBLOCK, so ::write() may consume only part of the frame
+   * (or return EAGAIN outright) whenever the kernel TX buffer is full —
+   * which happens as soon as the STM32 stops draining, e.g. while it sits
+   * in its power-on safety latch. Treating that as a fatal error is what
+   * made controller_manager deactivate MCRSystem a few seconds into every
+   * run: a partial write is not a broken link, it is backpressure.
+   *
+   * Loop over the remainder with a short poll so a frame is written whole
+   * or not at all. The bound keeps a genuinely wedged port from blocking
+   * the 100 Hz control cycle; a frame that still cannot be flushed is
+   * dropped (the STM32's own comms watchdog covers a lost command). */
+  const uint8_t *p = data;
+  size_t remaining = len;
+  constexpr int MAX_ATTEMPTS = 8;   /* ~2 ms worst case at 250 us/poll */
+  constexpr int POLL_US = 250;
+
+  for (int attempt = 0; attempt < MAX_ATTEMPTS && remaining > 0; ++attempt) {
+    ssize_t written = ::write(fd_, p, remaining);
+    if (written > 0) {
+      p += written;
+      remaining -= static_cast<size_t>(written);
+      continue;
+    }
+    if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+      return false;   /* a real error: ENXIO, EIO, EBADF, ... */
+    }
+    usleep(POLL_US);
+  }
+
+  return remaining == 0;
 }
 
 int SerialProtocol::read_bytes(uint8_t *buf, size_t max_len)
