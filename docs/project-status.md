@@ -80,10 +80,22 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
   全部为 47 bytes。官方 `ldlidar_stl_ros2` 的 LD06 配置实测 `/scan` 稳定 10.00 Hz，
   量程字段 0.02–25 m；`laser_geometry` 转换后的 `/ld06/points` 也为 10 Hz，抽样一帧
   421 个有效点、frame 为 `base_laser`。这是平面二维点云（z=0），不是 3D 点云。
-- **LD06 尚未正式集成到仓库 bringup。** 驱动当前构建在 Pi 的外部工作区
-  `/home/pi/ldlidar_ws`；GCC 13 下需恢复其 `logger/log_module.h` 中被注释的
-  `<pthread.h>`。仓库 `robot.launch.py` 里的雷达块仍被注释，且保留旧的 LD19 参数，
-  下一步应改为 LD06 并接入统一 launch。GPIO14/15 的 `/dev/ttyAMA0` 现已释放给 STM32。
+- **LD06 已正式接入仓库 bringup（2026-08-27）。** `ldlidar_stl_ros2` 以 git submodule
+  形式纳入 `ros2_ws/src/`（pinned 到上游 `bf668a8`，HTTPS URL，CI 自动递归 checkout）。
+  `robot.launch.py` 的雷达节点已取消注释并改用 LD06 参数（`product_name: LDLiDAR_LD06`、
+  `port_name: /dev/ttyUSB0`、`port_baudrate: 230400`、`frame_id: laser_link`）；
+  `laser_link`/`laser_joint` 在 `mcr.urdf.xacro` 中已存在（parent `base_link`，z=0.10 m），
+  故 `base_footprint → base_link → laser_link` TF 链由 robot_state_publisher 统一发布，
+  **不**再起上游 `ld06.launch.py` 自带的 `base_laser` static transform（会与 URDF 冲突）。
+- **GCC 13 编译修复走本地 patch。** 上游 `log_module.cpp` 调用 `pthread_mutex_*` 却未
+  `#include <pthread.h>`，GCC 13 不再传递性引入，编译报 "not declared in this scope"。
+  用 `docker/patches/ldlidar-include-pthread.patch` 在 colcon build 前由
+  `docker/apply-patches.sh` 幂等应用（优先 `git apply`，回退 `patch --forward --batch`，
+  已应用则跳过、不反向）；CI workflow 安装 `patch` 并在 build 前跑该脚本。
+- **实测验证（2026-08-27，容器内）**：`ldlidar_stl_ros2` + `robot_state_publisher` 起来后，
+  `/scan` 实测 **9.77 Hz**（≈10 Hz），`frame_id: laser_link`。GPIO14/15 的
+  `/dev/ttyAMA0` 留给 STM32，雷达走 CH340 `/dev/ttyUSB0` 不再抢占。
+  **SLAM（`/scan` + TF → `/map`）尚未跑通**，是下一步（P3）。
 - **IMX219 CSI 相机可用。** Pi 识别为 3280×2464、10-bit RGGB；640×480 `RGB888`
   连续采集实测 30.56 FPS，静态拍照正常。宿主机以 `Picamera2 + ONNX Runtime 1.23.2`
   运行仓库 `yolov8n.onnx`，20 帧连续测试平均推理 163.8 ms、端到端 6.05 FPS；当前场景
