@@ -112,6 +112,12 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
   用 `docker/patches/ldlidar-include-pthread.patch` 在 colcon build 前由
   `docker/apply-patches.sh` 幂等应用（优先 `git apply`，回退 `patch --forward --batch`，
   已应用则跳过、不反向）；CI workflow 安装 `patch` 并在 build 前跑该脚本。
+- **CI `colcon test` 已限定到自有包（2026-08-27 修复）。** submodule 引入后，
+  `colcon test` 会把上游 `ldlidar_stl_ros2` 的 `ament_uncrustify`/`cpplint` 一起跑，
+  实测 `729 tests / 695 failures`，全部来自上游 `ldlidar_driver/**` 与 `src/demo.cpp`
+  的既有代码风格，与本仓库改动无关。已改为
+  `colcon test --packages-select mcr_bringup mcr_description mcr_navigation`；
+  `colcon build` 仍构建全部包。**不要**为了过 CI 去改上游格式。
 - **实测验证（2026-08-27，容器内）**：`ldlidar_stl_ros2` + `robot_state_publisher` 起来后，
   `/scan` 实测 **9.77 Hz**（≈10 Hz），`frame_id: laser_link`。GPIO14/15 的
   `/dev/ttyAMA0` 留给 STM32，雷达走 CH340 `/dev/ttyUSB0` 不再抢占。

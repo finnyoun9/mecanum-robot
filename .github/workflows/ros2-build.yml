@@ -70,9 +70,15 @@ jobs:
 
       # colcon test exits 0 even when tests fail; colcon test-result
       # --verbose is what actually fails the job on a failing test.
+      #
+      # Only our own packages are tested. The vendored ldlidar_stl_ros2
+      # submodule ships ament_uncrustify/cpplint tests that fail on its
+      # own upstream formatting (~695 failures); we build that package
+      # but do not police upstream style.
       - name: Test
         working-directory: ros2_ws
         run: |
           . /opt/ros/jazzy/setup.sh
-          colcon test --event-handlers console_direct+
+          colcon test --event-handlers console_direct+ \
+            --packages-select mcr_bringup mcr_description mcr_navigation
           colcon test-result --verbose
