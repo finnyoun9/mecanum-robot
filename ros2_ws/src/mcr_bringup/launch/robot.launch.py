@@ -131,19 +131,27 @@ def generate_launch_description():
         output='screen',
     )
 
-    # --- Laser driver (LD19/LD06) — uncomment when wired ---
-    # laser_node = Node(
-    #     package='ldlidar_stl_ros2',
-    #     executable='ldlidar_stl_ros2_node',
-    #     name='ldlidar',
-    #     output='screen',
-    #     parameters=[{
-    #         'product_name': 'LDLiDAR_LD19',
-    #         'topic_scan': 'scan',
-    #         'frame_id': 'laser_link',
-    #         'port_name': '/dev/ttyUSB0',
-    #     }],
-    # )
+    # --- LD06 LiDAR driver (ldlidar_stl_ros2 submodule, /dev/ttyUSB0 via CH340) ---
+    # 2026-08-27 verified on the Pi: 230400 8N1, 47-byte frames, CRC-8 poly
+    # 0x4D, ~10 Hz. frame_id matches the laser_link in mcr.urdf.xacro so the
+    # base_footprint -> base_link -> laser_link TF chain (from robot_state_pub)
+    # is the sole source of that transform — do NOT add the static base_laser
+    # publisher that the upstream ld06.launch.py ships, it would conflict.
+    laser_node = Node(
+        package='ldlidar_stl_ros2',
+        executable='ldlidar_stl_ros2_node',
+        name='ldlidar',
+        output='screen',
+        parameters=[{
+            'product_name': 'LDLiDAR_LD06',
+            'topic_name': 'scan',
+            'frame_id': 'laser_link',
+            'port_name': '/dev/ttyUSB0',
+            'port_baudrate': 230400,
+            'laser_scan_dir': True,
+            'enable_angle_crop_func': False,
+        }],
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
@@ -162,4 +170,7 @@ def generate_launch_description():
 
         cmd_vel_relay,
         odom_to_path,
+
+        # LiDAR — starts as soon as /dev/ttyUSB0 is available.
+        laser_node,
     ])

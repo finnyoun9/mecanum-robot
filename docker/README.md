@@ -44,6 +44,12 @@ so edits (e.g. `git pull` on the Pi) are picked up immediately — no image
 rebuild needed unless you change the Dockerfile itself (i.e. add/remove
 apt packages).
 
+The LD06 driver (`ldlidar_stl_ros2`) is a git submodule under
+`ros2_ws/src/ldlidar_stl_ros2`. After a fresh clone run
+`git submodule update --init --recursive` on the host so its source is
+present under the bind-mount; otherwise `colcon build` can't find the
+package. The CI workflow checks out submodules automatically.
+
 ## Devices
 
 `docker/run.sh` probes for `/dev/ttyAMA0` (the Pi 5 header UART reserved

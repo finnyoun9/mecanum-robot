@@ -28,6 +28,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # ldlidar_stl_ros2 lives in ros2_ws/src/ as a submodule; without
+          # this colcon build fails to find the package.
+          submodules: recursive
 
       # Mirrors docker/Dockerfile's dependency list. Keep the two in sync:
       # a package added there is needed here too.
