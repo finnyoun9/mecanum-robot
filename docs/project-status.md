@@ -1,6 +1,6 @@
 # 项目状态与协作基线
 
-> **最后更新：2026-08-27。** 改动了真机状态、固件结构或标定常数之后，**请同步更新本文档**——多人或多端并行推进时，过时的基线会让其他开发者基于错误前提做出判断。
+> **最后更新：2026-08-28。** 改动了真机状态、固件结构或标定常数之后，**请同步更新本文档**——多人或多端并行推进时，过时的基线会让其他开发者基于错误前提做出判断。
 
 ## 协作机制
 
@@ -130,6 +130,56 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
 - **仓库 CSI 入口仍待实现。** `perception/detection/yolo_detect.py` 目前使用
   `cv2.VideoCapture(0)`、相对路径 `code/yolov8n.onnx` 和 `cv2.imshow()`，不适合当前
   IMX219/libcamera + headless 部署；本次仅完成独立真机验证，未把临时测试脚本提交进仓库。
+
+### M4：Pi↔STM32 真机链路 bring-up（2026-08-28，在途，链路未闭合）
+
+- **`rtos_drive` 固件目标已就绪（SIL/编译验证，尚未真机验收）。** `make TARGET=rtos_drive RTOS=1`
+  把 SIL 验证过的完整 Core/Src 应用搬上真板：CommTask（USART1 PA9/PA10 @921600，DMA1 ch4 TX /
+  ch5 RX）、CtrlTask（100 Hz 四轮速度 PI）、50 Hz 里程计；启动即安全锁存急停，收到有效
+  `CMD_VEL_CTRL` 且链路活着才解除。配套改动：
+  - RX DMA 改 **CIRCULAR**，中断里按 CNDTR 派生"新写入区间"排水进软件 ring，消除了在
+    RxEvent 回调里重 arm 与 BUSY_RX 竞争、跨 staging 边界丢帧的旧缺陷；
+  - `HAL_UART_ErrorCallback` 增加 `comm_uart_errors` 计数，先清 ORE/FE 标志再重 arm RX
+    （F1 HAL 出错路径不读 DR，不先清标志会重入风暴）；信号量/通知对象在 UART NVIC 使能前
+    创建，避免复位时 Pi 已在发字节导致 `xSemaphoreGiveFromISR(NULL)` 断言；
+  - 修复零负载帧（心跳/ACK）解析：此前 `exp_len==0` 时状态机永远到不了 CRC 状态，真机上
+    还会持续越界写 `frame_buf`；SIL 新增心跳 ACK 回归；
+  - deadman 语义：通信看门狗/上电导致的急停可被首个有效运动指令解除，显式急停和 ToF 停车
+    不自动解除；
+  - 新增 `motor_hold` 接线诊断目标（四轮固定占空比常转，供万用表探 TB6612 信号）。
+- **ROS 2 侧修复一个真 bug：`serial_protocol.cpp` 波特率设置。** 旧代码把裸波特率整数传给
+  `cfsetospeed/cfsetispeed`，与 CBAUD 掩码后得到 `B0`——内核把 B0 当作 modem 挂断，端口停在
+  挂起态，输出缓冲填满后写失败（表现为节点起量几秒后 EAGAIN/ENOTTY、硬件组件去激活）。
+  已改为 `B<speed>` 常量映射并检查 `tcsetattr` 返回值。
+- **Pi 侧真机检查工具（stdlib，在 Pi 宿主机跑、不进容器）：** `tools/link_check.py`
+  （链路/心跳/ODOM 流）、`tools/encoder_watch.py`（手转编码器看计数）、
+  `tools/drive_check.py`（端到端驱动，`--spin` 会真动车，先架空底盘）、
+  `tools/uart_baud_sweep.py`（只听不发，多波特率扫 A5 5A 帧，判断 STM32 实际波特率）。
+- **洪流测试实测（2026-08-27 深夜）：链路双向不通 + 最终 lockup。**
+  - 烧录曾有一次"擦了没写进"的失败，芯片在擦空 flash 上跑 `0xFFFFFFFF` 指令，表现为
+    PC=0xFFFFFFFE/MSP=0xFFFFFFD8——**那是空 flash 不是固件 HardFault**，重新烧录 verify 通过。
+  - ttest4 以 100 Hz 发 23 字节合法帧头帧（CRC 字段为 0，协议层必丢）18 秒：
+    **`comm_uart_errors = 45772`（≈每个接收字节都报错，帧错误级）**；Pi 侧 `IGNPAR` 把坏字节
+    直接丢弃，只收到 ~50 B/s（正常 50 Hz ODOM 应 ~1350 B/s）——这是**双向对称的波特率/电气
+    不匹配**特征，不是单向 TX 停滞；约 14 s 后 Pi 发送也规律卡死（对端不读，内核 TX 缓冲填满
+    后 EAGAIN）。
+  - 测试末期芯片进入 **lockup**：PC=0xFFFFFFFE、MSP=0xFFFFFFD8、CFSR=UNDEFINSTR+IACCVIOL，
+    即异常栈/向量取指失败（fault-on-fault），说明错误风暴路径里存在栈/堆破坏。这是
+    **独立于链路故障的真 bug**；错误回调、DMA abort/重 arm 顺序、解析器边界已逐行静态审查
+    未发现越界，需下次复现时先抓 CFSR/HFSR/BFAR/PSP/ICSR 再复位定位。
+- **Pi 侧已实测洗清：** ttyAMA0（RP1 PL011，物理 `0x1f00030000`）参考时钟 **50 MHz**；
+  921600 实配 IBRD=3/FBRD=25 → **921,659 baud（+0.06%）**，LCR_H=0x70（8N1+FIFO），
+  CR 中 UARTEN/TXE/RXE 均使能；ttyAMA0 上无 console/getty 占用。
+- **现场待恢复（2026-08-28）：** ST-Link 在调试中从 USB 总线掉死（`ioreg` 仅剩序列号为空的
+  幽灵设备，`st-info --probe` 找到 0 个），macOS 无法软件复位，**需物理重插 ST-Link USB**；
+  芯片停在 lockup/halted，**需整车上电**。
+- **下一步（按序）：** ① 重插 ST-Link，`st-info --probe` 确认；② 复核 Pi↔STM32 三线
+  （Pi pin8/GPIO14 TX→**PA10 RX**，pin10/GPIO15 RX←**PA9 TX**，**GND 必须共地**，万用表量
+  导通）；③ 上电后先在 Pi 跑 `tools/uart_baud_sweep.py` 听 STM32 真实波特率，再 SWD 读
+  RCC_CFGR / USART1 BRR 终判时钟（健康值：CFGR≈`0x001C040A` = HSI/2×PLL16→64 MHz、
+  PCKL2=64 MHz；BRR=`0x00000457` = 921,691 baud）；④ 链路通后用短洪流复现 lockup，
+  **halt 后先抓故障寄存器再复位**。
+
 
 ### 已实测（真机）
 
