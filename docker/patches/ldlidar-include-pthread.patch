@@ -1,0 +1,27 @@
+From: mecanum-robot <user@example.com>
+Subject: [PATCH] add missing #include <pthread.h> for GCC 13
+
+log_module.cpp calls pthread_mutex_init/lock/unlock but never includes
+<pthread.h>. On older GCC this resolved transitively; GCC 13 (the
+ros:jazzy-ros-base image's compiler) no longer pulls it in, so the
+build fails with "'pthread_mutex_lock' was not declared in this scope".
+
+The include goes inside the existing LINUX branch so the Windows
+(#ifndef LINUX, <comutil.h>) path is untouched.
+
+Pinned to upstream commit bf668a8, applied as a local patch by
+docker/apply-patches.sh before colcon build. Generated with `git diff`
+against that commit so the context matches byte-for-byte.
+
+diff --git a/ldlidar_driver/src/logger/log_module.cpp b/ldlidar_driver/src/logger/log_module.cpp
+index 61369e0..a365425 100644
+--- a/ldlidar_driver/src/logger/log_module.cpp
++++ b/ldlidar_driver/src/logger/log_module.cpp
+@@ -25,6 +25,7 @@
+ #pragma comment(lib, "comsuppw.lib")
+ #else
+ #include <stdlib.h>
++#include <pthread.h>
+ #endif
+ 
+ //使用vswprintf会出现奔溃的情况如果，传入数据大于 VA_PARAMETER_MAX 就会出现崩溃

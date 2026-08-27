@@ -50,7 +50,15 @@ jobs:
             ros-jazzy-joint-state-publisher \
             ros-jazzy-teleop-twist-keyboard \
             python3-colcon-common-extensions \
-            build-essential
+            build-essential \
+            patch
+
+      # Apply local patches to submodules (ldlidar_stl_ros2 GCC-13 fix)
+      # before colcon build. The workflow runs in the source tree at
+      # $GITHUB_WORKSPACE, not in ros2_ws, so set MCR_REPO_ROOT.
+      - name: Apply submodule patches
+        run: |
+          ./docker/apply-patches.sh
 
       # `run:` steps bypass the image entrypoint, so the overlay has to be
       # sourced explicitly in each one.
