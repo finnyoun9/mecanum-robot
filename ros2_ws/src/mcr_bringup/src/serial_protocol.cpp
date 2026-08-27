@@ -54,11 +54,6 @@ bool SerialProtocol::open(const std::string & device, int baudrate)
   struct termios tty;
   std::memset(&tty, 0, sizeof(tty));
 
-  if (cfsetospeed(&tty, speed) < 0 || cfsetispeed(&tty, speed) < 0) {
-    close();
-    return false;
-  }
-
   /* 8N1, raw mode */
   tty.c_cflag = CS8 | CREAD | CLOCAL;
   tty.c_iflag = IGNPAR;
@@ -69,10 +64,33 @@ bool SerialProtocol::open(const std::string & device, int baudrate)
   tty.c_cc[VMIN]  = 0;
   tty.c_cc[VTIME] = 0;
 
+  /* Baud LAST: on Linux the speed lives in the CBAUD bits of c_cflag, so
+   * the plain `c_cflag = ...` assignment above wipes whatever cfsetospeed
+   * stored. Setting the flags first and the speed after is what keeps the
+   * speed — doing it the other way round silently left CBAUD at 0 (= B0,
+   * a modem hangup), which is exactly the failure the comment above warns
+   * about: the port hangs, the 16 KB kernel TX queue fills, and every
+   * write then returns EAGAIN. */
+  if (cfsetospeed(&tty, speed) < 0 || cfsetispeed(&tty, speed) < 0) {
+    close();
+    return false;
+  }
+
   if (tcsetattr(fd_, TCSANOW, &tty) != 0) {
     close();
     return false;
   }
+
+  /* Confirm the speed actually took: tcsetattr can succeed while silently
+   * ignoring an unsupported speed, and a wrong baud here is invisible
+   * until the link mysteriously produces framing errors. */
+  struct termios verify;
+  if (tcgetattr(fd_, &verify) != 0 ||
+      cfgetospeed(&verify) != speed || cfgetispeed(&verify) != speed) {
+    close();
+    return false;
+  }
+
   tcflush(fd_, TCIFLUSH);
 
   return true;
