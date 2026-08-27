@@ -65,11 +65,12 @@ static void feed_vel_cmd(float w1, float w2, float w3, float w4) {
     }
 }
 
-/** Drain the mock UART TX ring and print any odo frames found. */
-static int drain_tx_frames(void) {
+/** Drain the mock UART TX ring; count ODO frames (and ACK frames if ack_out). */
+static int drain_tx_frames(int *ack_out) {
     uint8_t buf[PROTO_MAX_FRAME];
     uint8_t idx = 0;
     int odo_count = 0;
+    if (ack_out) *ack_out = 0;
 
     /* Reconstruct framed bytes from the mock TX ring.
      * We look for SYNC0+SYNC1 markers to find frame starts. */
@@ -108,7 +109,9 @@ static int drain_tx_frames(void) {
                 /* Full frame */
                 uint8_t cmd, payload[PROTO_MAX_PAYLOAD], pay_len, seq;
                 int ret = proto_decode(buf, idx, &cmd, payload, &pay_len, &seq);
-                if (ret >= 0 && cmd == CMD_ODOM_FEEDBACK) {
+                if (ret >= 0 && cmd == CMD_ACK) {
+                    if (ack_out) (*ack_out)++;
+                } else if (ret >= 0 && cmd == CMD_ODOM_FEEDBACK) {
                     odo_count++;
                     if (pay_len >= 40) {
                         odom_feedback_t odom;
@@ -231,7 +234,37 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* --- 5. Verify --- */
+    /* --- 5b. Zero-payload frame regression: a CMD_HEARTBEAT (7 bytes,
+     *       no payload) must be parsed and answered with a CMD_ACK.
+     *       The CommTask parser used to stall on exp_len == 0, which also
+     *       overran its static frame buffer on real hardware. --- */
+    int hb_ack = 0;
+    int hb_odo = 0;   /* ODO frames drained during the heartbeat check */
+    {
+        uint8_t hb_frame[PROTO_MAX_FRAME];
+        uint8_t hb_len;
+        static uint8_t hb_seq = 200;
+        if (proto_encode(CMD_HEARTBEAT, NULL, 0,
+                         hb_frame, &hb_len, hb_seq++) >= 0) {
+            sil_uart_rx_feed(hb_frame, hb_len);
+        }
+        sil_sched_tick();  /* CommTask parses + replies in the same tick */
+        sil_sched_tick();
+        hb_odo += drain_tx_frames(&hb_ack);  /* drains prior traffic too */
+        /* Now send a second heartbeat and count only the fresh ACK. */
+        hb_ack = 0;
+        if (proto_encode(CMD_HEARTBEAT, NULL, 0,
+                         hb_frame, &hb_len, hb_seq++) >= 0) {
+            sil_uart_rx_feed(hb_frame, hb_len);
+        }
+        sil_sched_tick();
+        sil_sched_tick();
+        hb_odo += drain_tx_frames(&hb_ack);
+    }
+    printf("Heartbeat ACK frames: %d\n", hb_ack);
+    bool hb_ok = (hb_ack >= 1);
+
+    /* --- 6. Verify --- */
     printf("\n=== Verification ===\n");
 
     int16_t pwm[4];
@@ -267,21 +300,22 @@ int main(int argc, char **argv) {
     }
 
     /* Odometry frames should have been published */
-    int odo_count = drain_tx_frames();
+    int odo_count = hb_odo + drain_tx_frames(NULL);
     printf("Odometry frames published: %d\n", odo_count);
     bool odo_ok = (odo_count > 0);
 
     /* Summary */
     printf("\n=== Result ===\n");
-    if (pid_ok && enc_ok && odo_ok) {
+    if (pid_ok && enc_ok && odo_ok && hb_ok) {
         printf("PASS: PID closed loop verified — PWM outputs non-zero, "
-               "encoders accumulate, odometry published.\n");
+               "encoders accumulate, odometry published, heartbeat ACKed.\n");
         return 0;
     } else {
-        printf("FAIL: pid=%s enc=%s odo=%s\n",
+        printf("FAIL: pid=%s enc=%s odo=%s hb=%s\n",
                pid_ok ? "PASS" : "FAIL",
                enc_ok ? "PASS" : "FAIL",
-               odo_ok ? "PASS" : "FAIL");
+               odo_ok ? "PASS" : "FAIL",
+               hb_ok ? "PASS" : "FAIL");
         return 1;
     }
 }

@@ -26,6 +26,10 @@ void HAL_UART_AbortTransmit(UART_HandleTypeDef *huart);
 /* Firmware-defined callbacks (main.c) invoked by the mock HAL. */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart);
 
+/* Core/Src/main.c comm layer (same prototypes as the HW header). */
+void comm_create_kernel_objects(void);
+uint32_t comm_uart_error_count(void);
+
 #ifdef __cplusplus
 }
 #endif

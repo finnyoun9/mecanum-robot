@@ -36,9 +36,11 @@
 /* --- Task handles --- */
 static TaskHandle_t hCtrlTask    = NULL;
 static TaskHandle_t hCommTask    = NULL;
+#ifndef HW_MINIMAL_TASKS
 static TaskHandle_t hSensorTask  = NULL;
-static TaskHandle_t hMonitorTask = NULL;
 static TaskHandle_t hRemoteTask  = NULL;
+#endif
+static TaskHandle_t hMonitorTask = NULL;
 
 /* --- Queues --- */
 static QueueHandle_t xCmdQueue;   /* Received commands → CtrlTask */
@@ -63,6 +65,20 @@ static volatile uint16_t rx_tail = 0;       /* task writes, ISR reads */
 static volatile uint16_t rx_overflows = 0;  /* dropped bytes when ring full */
 
 static uint8_t rx_stage[RX_STAGE_SIZE];     /* DMA staging buffer */
+
+#ifndef SIL_BUILD
+/* Circular-RX write position drained into rx_ring on the last RxEvent
+ * callback (index into rx_stage). Zero at every (re)arm. */
+static volatile uint16_t rx_dma_last_pos;
+#endif
+
+/** After an error-path abort/re-arm, circular RX restarts at rx_stage[0];
+ * re-sync the drain position so the next callback does not replay bytes. */
+void comm_rx_dma_resync(void) {
+#ifndef SIL_BUILD
+    rx_dma_last_pos = 0;
+#endif
+}
 
 /**
  * @brief Feed bytes into the UART RX ring (for SIL / host testing).
@@ -101,6 +117,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size) {
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
+#ifdef SIL_BUILD
+    /* The SIL mock delivers exact chunk sizes and models no DMA wrap. */
     if (size > 0) {
         for (uint16_t i = 0; i < size; i++) {
             uint16_t next = (uint16_t)((rx_head + 1) % RX_RING_SIZE);
@@ -111,22 +129,83 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size) {
                 rx_head = next;
             }
         }
+        if (hCommTask != NULL) {
+            xTaskNotifyFromISR(hCommTask, 0, eNoAction, &xHigherPriorityTaskWoken);
+        }
+    }
+    HAL_UARTEx_ReceiveToIdle_DMA(huart, rx_stage, RX_STAGE_SIZE);
+#else
+    /* Hardware: the RX DMA runs in CIRCULAR mode, so HT/TC/IDLE events do
+     * NOT stop reception — there is no re-arm here (re-arming inside this
+     * callback while RxState is still BUSY_RX returns HAL_BUSY and silently
+     * kills RX until the next overrun; that race corrupted every frame
+     * straddling the staging-buffer boundary). Instead, derive the span of
+     * freshly written bytes from the DMA counter and drain just that span,
+     * wrapping at the end of the staging buffer. */
+    uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(huart->hdmarx);
+    /* CNDTR reads 0 in the single-cycle reload window at TC in circular
+     * mode; treat that as the wrapped position (drain through end of
+     * stage) instead of computing pos == RX_STAGE_SIZE, which would make
+     * the cursor loop never terminate. */
+    uint16_t pos = (remaining == 0U) ? 0U
+                                     : (uint16_t)(RX_STAGE_SIZE - remaining);
+    uint16_t cursor = rx_dma_last_pos;
+    bool drained = false;
+
+    while (cursor != pos) {
+        uint16_t next = (uint16_t)((rx_head + 1) % RX_RING_SIZE);
+        if (next == rx_tail) {
+            rx_overflows++;               /* ring full: drop this byte */
+        } else {
+            rx_ring[rx_head] = rx_stage[cursor];
+            rx_head = next;
+        }
+        cursor = (uint16_t)((cursor + 1) % RX_STAGE_SIZE);
+        drained = true;
+    }
+    rx_dma_last_pos = pos;
+
+    /* hCommTask is NULL until firmware_arch_main() creates CommTask; an
+     * HT/TC event before that (e.g. RX re-armed from the error callback
+     * during boot) must not call xTaskNotifyFromISR(NULL). */
+    if (drained && (hCommTask != NULL)) {
         xTaskNotifyFromISR(hCommTask, 0, eNoAction, &xHigherPriorityTaskWoken);
     }
-
-    /* Re-arm the next DMA chunk on the staging buffer. */
-    HAL_UARTEx_ReceiveToIdle_DMA(huart, rx_stage, RX_STAGE_SIZE);
+#endif
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+/* UART error events observed in HAL_UART_ErrorCallback (ORE/FE/NE/PE/DMA).
+ * Readable via GDB / future telemetry; proves link recovery in the flood
+ * test rather than a silent lock-up. */
+static volatile uint32_t comm_uart_errors;
+
+uint32_t comm_uart_error_count(void) {
+    return comm_uart_errors;
+}
+
+/* True while a TX DMA transfer owns the wire. On hardware the HAL gState
+ * tracks this; the SIL mock exposes the same fact as dma_tx_active. */
+static bool uart_tx_in_flight(UART_HandleTypeDef *huart) {
+#ifdef SIL_BUILD
+    return huart->dma_tx_active;
+#else
+    return huart->gState == HAL_UART_STATE_BUSY_TX;
+#endif
 }
 
 /**
  * DMA TX complete: the tx_buf frame has been fully shifted out.
- * Return the buffer semaphore here — this is the ONLY place it is given
- * back, so comm_send_frame() can never overwrite a frame still in flight.
+ * Return the buffer semaphore here — this is the ONLY routine place it is
+ * given back, so comm_send_frame() can never overwrite a frame in flight.
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart != &huart1) return;
+
+    /* xTxComplete is NULL until comm_create_kernel_objects() runs; the
+     * UART NVIC line is enabled before that on the hardware target. */
+    if (xTxComplete == NULL) return;
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     xSemaphoreGiveFromISR(xTxComplete, &xHigherPriorityTaskWoken);
@@ -134,20 +213,45 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 }
 
 /**
- * UART error: abort the in-flight transfers, return the TX buffer
- * semaphore (safe for a binary semaphore — a give while available is a
- * no-op) and re-arm RX so the link recovers without a task restart.
+ * UART error (ORE overrun, FE framing, NE noise, PE parity, DMA error).
+ *
+ * STM32F1 HAL treats ANY error while DMA reception is enabled as blocking:
+ * HAL_UART_IRQHandler() has ALREADY disabled DMAR, aborted the RX DMA
+ * channel (UART_DMAAbortOnError invokes this callback synchronously) and
+ * restored RxState to READY. Circular DMA does NOT restart itself, so RX
+ * MUST be re-armed here — otherwise the link goes deaf until reboot.
+ *
+ * TX is deliberately NOT aborted: ORE/FE/NE are receive-side errors; an
+ * in-flight TX completes normally and returns xTxComplete via
+ * HAL_UART_TxCpltCallback(). The semaphore is released here only when no
+ * TX is active (e.g. a DMA transfer-error already ended the TX path):
+ * giving it while a transfer runs would let comm_send_frame() overwrite
+ * tx_buf while the DMA engine is still reading it.
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
     if (huart != &huart1) return;
 
-    HAL_UART_AbortReceive(huart);
-    HAL_UART_AbortTransmit(huart);
-    HAL_UARTEx_ReceiveToIdle_DMA(huart, rx_stage, RX_STAGE_SIZE);
+    comm_uart_errors++;
 
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xSemaphoreGiveFromISR(xTxComplete, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    /* Clear latched ORE/FE/NE/PE (on F1 they clear by reading SR then DR)
+     * BEFORE EIE is re-enabled: the HAL error path never reads DR, so the
+     * flags are still set here. Without this, the re-enabled error IRQ
+     * re-enters this handler immediately in a tight interrupt storm.
+     * The corrupting byte in DR is discarded. */
+#ifndef SIL_BUILD
+    __HAL_UART_CLEAR_OREFLAG(huart);
+#endif
+
+    /* Re-arm circular RX. The restarted channel writes rx_stage from
+     * index 0, so the NDTR-derived drain cursor must re-sync too. */
+    comm_rx_dma_resync();
+    (void)HAL_UARTEx_ReceiveToIdle_DMA(huart, rx_stage, RX_STAGE_SIZE);
+
+    if ((xTxComplete != NULL) && !uart_tx_in_flight(huart)) {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        xSemaphoreGiveFromISR(xTxComplete, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
 }
 
 /* ======================================================================== */
@@ -243,6 +347,11 @@ void CommTask(void *pvParameters) {
                     exp_len = frame_buf[2];
                     if (exp_len > PROTO_MAX_PAYLOAD) {
                         state = SYNC_WAIT_SYNC0;
+                    } else if (exp_len == 0) {
+                        /* Zero-length payload (heartbeat/ACK): the PAYLOAD
+                         * state appends before comparing, so it can never
+                         * reach frame_idx == 5 — skip straight to CRC. */
+                        state = SYNC_READ_CRC;
                     } else {
                         state = SYNC_READ_PAYLOAD;
                     }
@@ -428,8 +537,28 @@ void MonitorTask(void *pvParameters) {
 }
 
 /* ======================================================================== */
-/*  main()                                                                    */
+/*  Kernel object creation + main()                                          */
 /* ======================================================================== */
+
+/**
+ * @brief Create the FreeRTOS objects the UART ISRs touch.
+ *
+ * The hardware target calls this from main() BEFORE uart_dma_init()
+ * enables the USART1/DMA NVIC lines: the Pi may already be streaming at
+ * reset, and an ORE/FE interrupt before the semaphore exists used to call
+ * xSemaphoreGiveFromISR(NULL) and spin in configASSERT with the scheduler
+ * never started. FreeRTOS permits object creation before the scheduler
+ * starts. Idempotent — firmware_arch_main() calls it again.
+ */
+void comm_create_kernel_objects(void) {
+    if (xTxComplete == NULL) {
+        xTxComplete = xSemaphoreCreateBinary();
+        if (xTxComplete != NULL) {
+            /* Available = no DMA TX in flight. */
+            xSemaphoreGive(xTxComplete);
+        }
+    }
+}
 
 int firmware_arch_main(void) {
     /* --- HAL init (CubeMX-generated) --- */
@@ -448,14 +577,21 @@ int firmware_arch_main(void) {
 
     /* --- Create queues & semaphores --- */
     xCmdQueue    = xQueueCreate(8, sizeof(uint8_t) * 2); /* [cmd, payload_len] */
-    xTxComplete  = xSemaphoreCreateBinary();
-    xSemaphoreGive(xTxComplete);
+    /* Idempotent: the hardware target already called this from main()
+     * before uart_dma_init() enabled the UART/DMA interrupts. */
+    comm_create_kernel_objects();
 
     /* --- Create tasks --- */
     xTaskCreate(CtrlTask,    "Ctrl",   512, NULL, 4, &hCtrlTask);
     xTaskCreate(CommTask,    "Comm",   512, NULL, 3, &hCommTask);
+#ifndef HW_MINIMAL_TASKS
+    /* I2C sensors (MPU6050/VL53L0X) and the NRF24 link are not wired into
+     * the RTOS drive target yet — their tasks are created only in builds
+     * with the full peripheral set. The task functions stay compiled so
+     * the SIL build and future hardware targets are unaffected. */
     xTaskCreate(SensorTask,  "Sensor", 256, NULL, 2, &hSensorTask);
     xTaskCreate(RemoteTask,  "Remote", 256, NULL, 2, &hRemoteTask);
+#endif
     xTaskCreate(MonitorTask, "Monitor",128, NULL, 1, &hMonitorTask);
 
     /* --- Start scheduler (never returns) --- */

@@ -54,6 +54,11 @@ typedef struct {
     uint8_t  comm_seq_tx;
     bool     comm_timeout;
     uint32_t last_rx_tick;
+    /* True when the latched emergency stop was caused by the comm
+     * watchdog (or by the boot state): a fresh CMD_VEL_CTRL over a live
+     * link may clear it. Explicit e-stop and ToF stops leave this false,
+     * so they are NOT auto-resumed by motion commands. */
+    bool     comm_stop_latched;
 
     /* Error flags */
     uint8_t error_flags;

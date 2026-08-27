@@ -32,6 +32,9 @@ void robot_init(void) {
     /* Default IMU quaternion to identity */
     g_robot.imu_q[0] = 1.0f;
     g_robot.comm_timeout = true; /* Start in timeout until first RX */
+    /* The boot-time stop is recoverable by the first live motion command,
+     * exactly like a comm-watchdog trip (deadman-switch semantics). */
+    g_robot.comm_stop_latched = true;
 }
 
 void robot_ctrl_loop(void) {
@@ -59,6 +62,7 @@ void robot_ctrl_loop(void) {
     if ((now - g_robot.last_rx_tick) > COMM_WATCHDOG_MS) {
         if (!g_robot.comm_timeout) {
             g_robot.comm_timeout = true;
+            g_robot.comm_stop_latched = true;
             robot_emergency_stop();
         }
     }
@@ -109,6 +113,15 @@ void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len) {
         g_robot.target_w[1] = vel.w2;
         g_robot.target_w[2] = vel.w3;
         g_robot.target_w[3] = vel.w4;
+        /* Deadman-switch recovery: if the stop was latched by the comm
+         * watchdog (or boot) and no ToF obstacle is latched, resume on
+         * this fresh motion command over the live link. Explicit e-stop
+         * and ToF stops keep comm_stop_latched == false and stay latched. */
+        if (g_robot.emergency_stop_active && g_robot.comm_stop_latched &&
+            !g_robot.tof_emergency) {
+            robot_emergency_clear();
+            g_robot.comm_stop_latched = false;
+        }
         break;
     }
     case CMD_EMERGENCY_STOP:
@@ -188,5 +201,6 @@ void robot_emergency_clear(void) {
     motor_resume();
     g_robot.emergency_stop_active = false;
     g_robot.tof_emergency = false;
+    g_robot.comm_stop_latched = false;
     g_robot.error_flags = 0;
 }

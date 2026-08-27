@@ -36,18 +36,36 @@ CFLAGS += -I$(ROOT)/../../shared
 LDFLAGS  = -mcpu=cortex-m3 -mthumb -T STM32F103XB_FLASH.ld
 LDFLAGS += -Wl,--gc-sections -nostartfiles -specs=nosys.specs -lc -lm
 
-C_SRCS  = $(TARGET)_main.c stm32f1xx_it_bringup.c system_clock_config.c
-C_SRCS += $(EXTRA_SRCS)
+C_SRCS  = $(TARGET)_main.c system_clock_config.c
 C_SRCS += $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx/system_stm32f1xx.c
 C_SRCS += $(wildcard $(HAL_SRC)/*.c)
 
 ASM_SRCS = startup_stm32f103xb.s
 
+ifeq ($(RTOS),1)
+# --- FreeRTOS drive target: full Core/Src application on real silicon ---
+# TARGET=rtos_drive RTOS=1
+FREERTOS = $(ROOT)/Middleware/FreeRTOS/Source
+C_SRCS += stm32f1xx_it_rtos.c
+# Application (Core/Src) + shared protocol
+C_SRCS += main.c robot_control.c motor.c encoder.c pid.c mecanum_ik.c ahrs.c \
+          mpu6050.c tof_sensor.c nrf24l01.c remote_control.c protocol.c
+# FreeRTOS kernel (ARM_CM3 port, heap_4 dynamic allocation)
+C_SRCS += tasks.c queue.c list.c timers.c port.c heap_4.c
+CFLAGS += -I fwinc -DHW_MINIMAL_TASKS
+CFLAGS += -I$(FREERTOS)/include -I$(FREERTOS)/portable/GCC/ARM_CM3
+else
+# --- Bare-metal bring-up targets (no FreeRTOS) ---
+C_SRCS += stm32f1xx_it_bringup.c
+C_SRCS += $(EXTRA_SRCS)
+endif
+
 OBJS  = $(notdir $(C_SRCS:.c=.o))
 OBJS += $(ASM_SRCS:.s=.o)
 
 vpath %.c . $(ROOT)/Src $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx $(HAL_SRC) \
-    $(ROOT)/../../shared
+    $(ROOT)/../../shared $(FREERTOS) $(FREERTOS)/portable/GCC/ARM_CM3 \
+    $(FREERTOS)/portable/MemMang
 
 .PHONY: all clean flash debug-server
 
