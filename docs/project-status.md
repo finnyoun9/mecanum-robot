@@ -70,6 +70,26 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
   车端 `rx_packets=0`，手柄 `Sig=0` 表示未获得车端 Auto-ACK；这不是蓝牙式“配对码”状态。
   现阶段应继续用万用表确认模块 `MISO` 排针根部至 Blue Pill `PB4` 的实际连通性及排针方向；
   若连通无误，再判定模块本体异常。不能写成“手柄固件已经确认有问题”。
+- **接线已复核，与探针假设一致（实测）。** 车端实际接线为
+  `CE=PA8`、`CSN=PA15`、`SCK=PB3`、`MISO=PB4`、`MOSI=PB5`、`IRQ` 不接（轮询接收）。
+  排查早期一度把 SCK/MOSI 误记为 `PA13/PA14`（实为 SWD 引脚），已纠正；
+  后续文档与探针必须以 `PB3/PB4/PB5` 为准。
+- **替换板 SW-DP ID 与旧板不同（实测）。** `Core/HW/stlink_stm32f1.cfg` 中写死的
+  `CPUTAPID 0x2ba01477` 在新板上不匹配，OpenOCD 因此拒绝连接；新板读到标准
+  `0x1ba01477`。已新增 `Core/HW/stlink_new.cfg`（直接 source `interface/stlink.cfg`
+  + `target/stm32f1x.cfg`，不锁 TAP ID）用于替换板烧录，实测 `program ... verify reset`
+  通过。这是**板间差异**，不是 MCU 故障。
+- **`MISO/PB4` 被拉低的位置已缩到模块侧（实测，尚未定性）。** 新增引脚级探针
+  `Core/HW/nrf24_spi_probe_main.c`（USART1/PA9 @115200 文本输出 + 全局变量供 GDB 读取，
+  含快速与 ~100 kHz 慢速两次 `STATUS` 读取）。模块接 `VCC` 时，`PB4` 配上拉仍读到 0、
+  快速读 `STATUS` 仍为 `0x00`；**拔掉模块 `VCC` 后同一固件的 `PB4` 上拉恢复读 1**。
+  据此可判定 MCU 侧 `PB4` 与 JTAG remap 正常，问题在模块侧或模块上电后的 MISO 行为，
+  但**尚不能断定模块已损坏**——上电即输出低亦可见于部分 SI24R1/带 PA 兼容模块。
+- **未完成：慢速 SPI 读数尚未取到（实测受阻）。** 探针跑到后段时 PC13 观察到持续慢闪，
+  与预期的阶段化闪烁不符，怀疑卡在某阶段或存在探针自身逻辑缺陷；本机 `st-info` 缺失、
+  `arm-none-eabi-gdb` 不可用（`exit 127`），OpenOCD `mdw` 亦未回读到 stdout，
+  因此慢速 `STATUS` 值**目前没有可信读数**。下一步应经 USART1/PA9 接 USB-TTL 读文本输出，
+  并给探针各阶段加超时退出，再决定是否换模块。
 
 ### Pi 侧传感器（2026-08-27，实测）
 
@@ -168,9 +188,9 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
 - `lx = 0.10 m`（半轴距）和 `ly = 0.12 m`（半轮距）仅为默认估计值，均未实测；
   应量前后轮、左右轮的轴中心距后各除以 2，再替换 ROS 2 与模拟器中的默认值。
 - `firmware_arch_main()` **不能在真机跑**：缺 UART/I2C 的 MSP 初始化；`motor.c` 引脚映射目前由各 HW target 在初始化时传入，不是静态表。
-- IMU、ToF、Nav2 尚未上真机；LD06 和 IMX219/YOLO 已分别完成 Pi 侧独立验证，但还没有
-  与 `robot.launch.py`、真实里程计、TF 和 SLAM 形成整车链路。NRF24L01 曾完成真机验收，
-  当前车端模块已故障下线，不能写成当前可用。
+- IMU、ToF、Nav2 尚未上真机。LD06 已接入 `robot.launch.py`（见上文），但仍未与真实里程计、
+  TF 闭环和 SLAM 形成整车链路；IMX219/YOLO 只完成 Pi 侧独立验证，仓库内仍无 CSI 相机节点。
+  NRF24L01 曾完成真机验收，当前车端模块已故障下线，不能写成当前可用。
 - 机械臂：只有 host protocol 与 SIL 骨架，硬件缺货未到（智能总线舵机版），见 [manipulator/docs/decision-log.md](../manipulator/docs/decision-log.md)。
 
 ---
