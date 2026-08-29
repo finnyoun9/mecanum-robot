@@ -13,6 +13,7 @@ from link_check import CMD_HEARTBEAT, Parser, encode_frame, open_serial
 
 
 ERR_TOF_TIMEOUT = 0x04
+ERR_TOF_INVALID = 0x08
 
 
 def main():
@@ -69,6 +70,10 @@ def main():
     if decoder.last_error_flags is not None and \
             (decoder.last_error_flags & ERR_TOF_TIMEOUT):
         print("RESULT: FAIL — firmware reports TOF_TIMEOUT")
+        return 1
+    if decoder.last_error_flags is not None and \
+            (decoder.last_error_flags & ERR_TOF_INVALID):
+        print("RESULT: FAIL — firmware reports TOF_INVALID")
         return 1
     if not seen_distances:
         print("RESULT: FAIL — no non-zero VL53L0X range received")

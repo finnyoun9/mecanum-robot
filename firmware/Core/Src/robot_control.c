@@ -218,13 +218,17 @@ void robot_update_imu(const float q[4], const float gyro[3]) {
 void robot_update_tof(uint16_t distance_mm, bool valid, bool timed_out) {
     if (timed_out) {
         g_robot.error_flags |= ERR_TOF_TIMEOUT;
+        g_robot.error_flags &= (uint8_t)~ERR_TOF_INVALID;
         g_robot.tof_valid = false;
         return; /* keep last known-good distance */
     }
     g_robot.error_flags &= (uint8_t)~ERR_TOF_TIMEOUT;
     g_robot.tof_valid = valid;
     if (valid) {
+        g_robot.error_flags &= (uint8_t)~ERR_TOF_INVALID;
         g_robot.tof_distance_mm = distance_mm;
+    } else {
+        g_robot.error_flags |= ERR_TOF_INVALID;
     }
 }
 

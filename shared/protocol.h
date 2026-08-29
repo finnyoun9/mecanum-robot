@@ -45,6 +45,7 @@ extern "C" {
 #define ERR_UNKNOWN_CMD   0x02
 #define ERR_MOTOR_FAULT   0x03
 #define ERR_TOF_TIMEOUT   0x04
+#define ERR_TOF_INVALID   0x08  /* measurement completed but has no valid range */
 
 /* --- Payload structures --- */
 
