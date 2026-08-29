@@ -427,6 +427,10 @@ void CtrlTask(void *pvParameters) {
 #ifdef HW_OLED
 static uint8_t oled_frame[SSD1306_FRAME_BYTES];
 
+/* SensorTask samples ToF every 50 ms. Five seconds is long enough to read a
+ * page on the small panel without turning the OLED into a distracting ticker. */
+#define OLED_PAGE_HOLD_TICKS 100U
+
 static int16_t oled_scaled_i16(float value, float scale) {
     float scaled = value * scale;
     if (scaled > 32767.0f) return INT16_MAX;
@@ -522,7 +526,7 @@ void SensorTask(void *pvParameters) {
                 /* One contiguous transfer avoids a visible 400 ms cascade
                  * of eight page writes. Refreshing only when changing page
                  * also prevents the status text from overlapping itself. */
-                if (++oled_frames_on_page >= 8U) {
+                if (++oled_frames_on_page >= OLED_PAGE_HOLD_TICKS) {
                     oled_frames_on_page = 0;
                     oled_page = (uint8_t)((oled_page + 1U) % OLED_UI_PAGE_COUNT);
                     oled_render_state(oled_page);

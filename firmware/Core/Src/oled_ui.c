@@ -106,10 +106,11 @@ static void render_overview(uint8_t *frame, const oled_ui_data_t *d) {
     unsigned_dec(value, d->tof_mm, 4U);
     text(frame, 1, 4, value);
     text(frame, 2, 0, d->comm_ok ? "LINK OK" : "NO LINK");
-    text(frame, 3, 0, d->emergency_stop ? "STOP" : "RUN");
     value[0] = "0123456789ABCDEF"[d->error_flags >> 4];
     value[1] = "0123456789ABCDEF"[d->error_flags & 0x0FU];
     value[2] = '\0';
+    text(frame, 3, 0, d->emergency_stop ? "STOP ERR" : "RUN ERR");
+    text(frame, 3, 8, value);
 }
 
 static void render_wheels(uint8_t *frame, const oled_ui_data_t *d) {
