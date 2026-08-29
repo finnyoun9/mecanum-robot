@@ -127,6 +127,10 @@ static void test_valid_range_and_error_hold_last_good(void) {
     stage_range(11, 2501);
     assert(tof_read_mm(&status) == 345);
     assert(status == TOF_OUT_OF_RANGE);
+
+    stage_range(11, 0); /* invalid near-range result must never become 000 mm */
+    assert(tof_read_mm(&status) == 345);
+    assert(status == TOF_OUT_OF_RANGE);
     printf("PASS test_valid_range_and_error_hold_last_good\n");
 }
 

@@ -446,6 +446,7 @@ static void oled_render_state(uint8_t page) {
     oled_ui_data_t data = {0};
 
     data.tof_mm = state->tof_distance_mm;
+    data.tof_valid = state->tof_valid;
     data.error_flags = state->error_flags;
     data.comm_ok = !state->comm_timeout;
     data.emergency_stop = state->emergency_stop_active;
@@ -467,6 +468,7 @@ void SensorTask(void *pvParameters) {
     static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f};
 #ifndef HW_IMU_ONLY
     static uint8_t tof_divider = 0;
+    static bool tof_ready = false;
 #endif
 #ifdef HW_OLED
     static uint8_t oled_refresh_ticks = 0;
@@ -485,7 +487,7 @@ void SensorTask(void *pvParameters) {
 #endif
         mpu6050_init();
 #ifndef HW_IMU_ONLY
-        tof_init();
+        tof_ready = tof_init();
 #endif
 #ifdef HW_OLED
         oled_ok = ssd1306_init();
@@ -520,9 +522,15 @@ void SensorTask(void *pvParameters) {
 #ifndef HW_IMU_ONLY
         if (++tof_divider >= 5) {
             tof_divider = 0;
-            tof_status_t tof_status;
-            uint16_t tof_mm = tof_read_mm(&tof_status);
-            robot_update_tof(tof_mm, tof_status == TOF_TIMEOUT);
+            if (tof_ready) {
+                tof_status_t tof_status;
+                uint16_t tof_mm = tof_read_mm(&tof_status);
+                robot_update_tof(tof_mm, tof_status == TOF_OK,
+                                 tof_status == TOF_TIMEOUT);
+            } else {
+                /* A failed identification/initialisation is not a 0 mm hit. */
+                robot_update_tof(0U, false, true);
+            }
 #ifdef HW_OLED
             if (oled_ok) {
                 if (++oled_refresh_ticks >= OLED_REFRESH_TICKS) {

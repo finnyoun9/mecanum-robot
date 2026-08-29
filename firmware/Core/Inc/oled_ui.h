@@ -11,6 +11,7 @@
 
 typedef struct {
     uint16_t tof_mm;
+    bool tof_valid;
     uint8_t error_flags;
     bool comm_ok;
     bool emergency_stop;

@@ -72,6 +72,7 @@ typedef struct {
 
     /* ToF */
     uint16_t tof_distance_mm;
+    bool     tof_valid;
     bool     tof_emergency;
 
     /* IMU */
@@ -135,12 +136,10 @@ const robot_state_t* robot_get_state(void);
 void robot_update_imu(const float q[4], const float gyro[3]);
 
 /**
- * @brief Update ToF distance reading. Sets/clears ERR_TOF_TIMEOUT in
- * error_flags. On timeout the last known-good distance is kept rather
- * than overwritten, so robot_ctrl_loop's emergency-stop check doesn't see
- * a bogus 0.
+ * @brief Update ToF status. Invalid samples never overwrite the last valid
+ * distance and are explicitly surfaced to the OLED instead of as 000 mm.
  */
-void robot_update_tof(uint16_t distance_mm, bool timed_out);
+void robot_update_tof(uint16_t distance_mm, bool valid, bool timed_out);
 
 /** Trigger emergency stop from ToF/comm timeout */
 void robot_emergency_stop(void);

@@ -108,9 +108,13 @@ void oled_ui_render(uint8_t frame[SSD1306_FRAME_BYTES], uint8_t page,
     if (frame == NULL || data == NULL) return;
     (void)page;
     memset(frame, 0, SSD1306_FRAME_BYTES);
-    unsigned_dec(value, data->tof_mm, 4U);
     line[0] = 'T'; line[1] = 'O'; line[2] = 'F'; line[3] = ':';
-    memcpy(&line[4], value, 4U);
+    if (data->tof_valid) {
+        unsigned_dec(value, data->tof_mm, 4U);
+        memcpy(&line[4], value, 4U);
+    } else {
+        memcpy(&line[4], "----", 4U);
+    }
     line[8] = data->comm_ok ? 'O' : 'X';
     line[9] = data->emergency_stop ? 'S' : 'R';
     line[10] = 'E'; line[11] = ':';

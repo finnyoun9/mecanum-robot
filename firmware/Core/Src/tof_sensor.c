@@ -41,6 +41,7 @@
 
 #define MODEL_ID_EXPECTED               0xEEU
 #define RANGE_STATUS_VALID              11U
+#define MIN_VALID_MM                    15U
 #define MAX_VALID_MM                    2000U
 
 extern uint32_t hal_get_tick_ms(void);
@@ -282,7 +283,10 @@ uint16_t tof_read_mm(tof_status_t *status) {
     consecutive_timeouts = 0;
     device_status = (uint8_t)((result[0] & 0x78U) >> 3);
     mm = (uint16_t)(((uint16_t)result[10] << 8) | result[11]);
-    if (device_status != RANGE_STATUS_VALID || mm > MAX_VALID_MM) {
+    /* The module's specified near limit is 15 mm.  A zero result is never a
+     * physical range; accepting it would make an invalid sample look like a
+     * real obstacle at the sensor face. */
+    if (device_status != RANGE_STATUS_VALID || mm < MIN_VALID_MM || mm > MAX_VALID_MM) {
         if (status != NULL) *status = TOF_OUT_OF_RANGE;
         return last_valid_mm;
     }

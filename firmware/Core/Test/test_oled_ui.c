@@ -18,6 +18,7 @@ int main(void) {
     uint32_t initial_sum;
     oled_ui_data_t data = {
         .tof_mm = 771U,
+        .tof_valid = true,
         .error_flags = 0x04U,
         .comm_ok = true,
         .emergency_stop = false,
@@ -34,6 +35,10 @@ int main(void) {
     assert(memchr(frame, 0x00, sizeof(frame)) != NULL);
 
     data.tof_mm = 1234U;
+    oled_ui_render(frame, 0U, &data);
+    assert(checksum(frame) != initial_sum);
+
+    data.tof_valid = false;
     oled_ui_render(frame, 0U, &data);
     assert(checksum(frame) != initial_sum);
 
