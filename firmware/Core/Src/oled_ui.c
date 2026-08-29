@@ -54,6 +54,7 @@ static void pixel(uint8_t *frame, uint8_t x, uint8_t y) {
 
 static void text(uint8_t *frame, uint8_t row, uint8_t col, const char *s) {
     static const uint8_t stretch[5] = {2U, 1U, 2U, 1U, 2U};
+    static const uint8_t y_offset[7] = {0U, 2U, 3U, 5U, 6U, 8U, 9U};
     uint8_t x = (uint8_t)(col * 8U);
     uint8_t y = (uint8_t)(row * 16U);
     if (row >= 4U || s == NULL) return;
@@ -64,7 +65,7 @@ static void text(uint8_t *frame, uint8_t row, uint8_t col, const char *s) {
         for (uint8_t glyph_x = 0; glyph_x < 5U; ++glyph_x) {
             for (uint8_t glyph_y = 0; glyph_y < 7U; ++glyph_y) {
                 if ((g[glyph_x] & (uint8_t)(1U << glyph_y)) != 0U) {
-                    uint8_t glyph_y_out = (uint8_t)(glyph_y + glyph_y / 2U);
+                    uint8_t glyph_y_out = y_offset[glyph_y];
                     for (uint8_t dx = 0; dx < stretch[glyph_x]; ++dx) {
                         pixel(frame, (uint8_t)(x + glyph_x_out + dx),
                               (uint8_t)(y + glyph_y_out));
