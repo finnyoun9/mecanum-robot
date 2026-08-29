@@ -289,7 +289,7 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
 - **麦轮 IK 的固有问题**：四轮减速比不一致破坏等价轮假设，带载时该轮扭矩少 2.2 倍，
   **落地必然跑偏，且改标定常量修不了**。
 
-### I2C2 外设 + MPU6050 驱动（2026-08-29，SIL/单测验证，真机未验收）
+### I2C2 外设 + MPU6050 驱动（2026-08-29，真机验收通过）
 
 **动机：`firmware_arch_main()` 缺 I2C MSP 初始化**（见"未做/未验证"），IMU 与 ToF
 两个驱动里所有 I2C 调用都是注释状态。排查后发现**它们引用的 `hi2c1` 从未在项目任何
@@ -324,15 +324,21 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   CTest 8/8；真机 `-Wall -Werror` 干净链接，text 20860 → **25204 B**
   （+AHRS +libm +I2C HAL）；`nm` 确认 `SensorTask` / `mpu6050_*` /
   `MahonyAHRSupdateIMU` 均在 ELF 中。
-- ❌ **未烧板、未接传感器、无任何真机证据。** 接线时注意：**AD0 必须接地**
-  （驱动按 `0x68` 写死，悬空可能变 `0x69`）、**VCC 走 3.3V**（单电源纪律）、
-  驱动是轮询的**不用 INT 脚**。若读不出来先把 `ClockSpeed` 降到 100 kHz——
-  面包板杜邦线寄生电容大，400 kHz 上升沿勉强。
-- **真机验收还缺一个观测手段**：`mpu6050_init()` 的返回值在 `SensorTask` 里被丢弃，
-  且 `protocol.h` 没有 IMU 相关错误位（`ERR_*` 只到 `0x04` 的 ToF）；
-  `encoder_watch.py` 只解 `<4i` 编码器计数，不显示姿态。数据通路本身是通的
-  （`robot_update_imu()` → `CMD_ODOM_FEEDBACK`，帧内 `imu_q` 偏移 23、
-  `imu_gyro` 偏移 39），但需要一个 `imu_watch.py` 才能判断"接好了没"。
+- **真机验收通过（2026-08-29）**：MPU6050 按 `3.3V / GND / PB10 SCL /
+  PB11 SDA / AD0 GND` 接入后，`rtos_drive` 经 ST-Link 烧录并 verify。Pi 端运行
+  `python3 tools/imu_watch.py --duration 15`，收到 **754 个 ODOM 样本（约 50 Hz）**、
+  **CRC failure 0、`error_flags=0`**；四元数 norm 始终在 0.95–1.05，静止姿态约
+  `roll=-0.6° / pitch=+2.7°`，gyro 有真实噪声而非固件的 identity/全零故障默认值。
+  这闭合了 `I2C2 → MPU6050 → Mahony AHRS → robot_update_imu() → UART ODOM → Pi`
+  整条数据链。
+- 新增 `tools/imu_watch.py` 作为可重复验收工具：只发 heartbeat，不发速度命令，
+  车轮保持急停；实时显示 RPY/gyro，并拒绝无 ODOM、CRC 错、非单位四元数以及
+  identity quaternion + zero gyro。
+- **实测待校准项**：静止时 Y 轴 gyro 约 `+0.045 rad/s`（约 `+2.6°/s`），说明连接和
+  采样有效，但零偏偏大。下一步应在启动静止窗口内取均值并扣除 gyro bias，再做手动
+  90° 转动和静置漂移量化；当前结果只证明数据链，不代表姿态精度已验收。
+- 接线约束仍是：**AD0 必须接地**（驱动按 `0x68` 写死）、**VCC 走 3.3V**，轮询驱动
+  不用 INT 脚。当前 400 kHz 已在实物杜邦线下稳定通过，无需降到 100 kHz。
 
 ### M5：ROS 2 整车栈闭合 + SLAM 出图（2026-08-28，实测）
 
@@ -520,9 +526,10 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
 - `lx = 0.10 m`（半轴距）和 `ly = 0.12 m`（半轮距）仅为默认估计值，均未实测；
   应量前后轮、左右轮的轴中心距后各除以 2，再替换 ROS 2 与模拟器中的默认值。
 - `firmware_arch_main()` **不能在真机跑**：缺 UART 的 MSP 初始化；`motor.c` 引脚映射目前由各 HW target 在初始化时传入，不是静态表。
-  I2C2 的初始化已于 2026-08-29 补上（见上文 I2C2/MPU6050 章节），**但真机未验收**。
-- IMU、ToF、Nav2 尚未上真机。**IMU 驱动与 I2C2 外设初始化已完成并通过单测**
-  （2026-08-29，见上文），仍未烧录、未接传感器。ToF 驱动仍是空壳且被 `HW_IMU_ONLY` 编译掉。
+  `rtos_drive` target 已在进入它之前完成 UART DMA 和 I2C2 MSP 初始化；I2C2/MPU6050
+  已于 2026-08-29 真机验收（见上文）。
+- **IMU 已上真机并闭合到 Pi ODOM 帧**，但 gyro 零偏校准和动态姿态精度仍未验收。
+  ToF、Nav2 尚未上真机；ToF 驱动仍是空壳且被 `HW_IMU_ONLY` 编译掉。
   LD06 已接入 `robot.launch.py`（见上文），但仍未与真实里程计、
   TF 闭环和 SLAM 形成整车链路；IMX219/YOLO 只完成 Pi 侧独立验证，仓库内仍无 CSI 相机节点。
   NRF24L01 曾完成真机验收，当前车端模块已故障下线，不能写成当前可用。

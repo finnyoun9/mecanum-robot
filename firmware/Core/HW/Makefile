@@ -19,6 +19,7 @@ TARGET ?= bringup
 EXTRA_SRCS ?=
 OPENOCD ?= openocd
 OPENOCD_CONFIG = stlink_stm32f1.cfg
+STFLASH ?= st-flash
 
 ROOT       = ..
 DRIVERS    = $(ROOT)/Drivers
@@ -75,7 +76,7 @@ vpath %.c . $(ROOT)/Src $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx $(HAL_SRC) \
     $(ROOT)/../../shared $(FREERTOS) $(FREERTOS)/portable/GCC/ARM_CM3 \
     $(FREERTOS)/portable/MemMang
 
-.PHONY: all clean flash debug-server
+.PHONY: all clean flash flash-stlink debug-server
 
 all: $(TARGET).bin
 
@@ -94,6 +95,11 @@ $(TARGET).bin: $(TARGET).elf
 
 flash: $(TARGET).bin
 	$(OPENOCD) -f $(OPENOCD_CONFIG) -c "program $(TARGET).elf verify reset exit"
+
+# Some older ST-Link V2 probes report SWD IDCODE 0x1ba01477, which OpenOCD
+# 0.12 rejects while stlink's own flash loader handles and verifies correctly.
+flash-stlink: $(TARGET).bin
+	$(STFLASH) --reset write $(TARGET).bin 0x08000000
 
 debug-server:
 	$(OPENOCD) -f $(OPENOCD_CONFIG)

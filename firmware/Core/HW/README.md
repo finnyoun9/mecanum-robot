@@ -1,10 +1,10 @@
 # STM32F103C8T6 hardware targets
 
-This directory contains standalone, bare-metal targets for real-hardware
-bring-up. They do not start FreeRTOS and must not be described as the
-encoder/PID/UART application.
+This directory contains real-hardware targets. Most are standalone bare-metal
+bring-up probes; `rtos_drive` is the production-shaped FreeRTOS application and
+must not be confused with those probes.
 
-## Verification status (2026-08-25)
+## Verification status (2026-08-29)
 
 The following targets were built from clean artifacts with `-Wall -Werror` on
 the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
@@ -27,9 +27,25 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `rr_encoder_probe` | RR passive raw A/B continuity diagnostic | hardware pass: 10 turns -> A/B 4,516 each; 3,016 + 12 + 1,548 = 4,576 |
 | `rr_motor_encoder_probe` | RR-only 1.5 s full-duty raw A/B diagnostic | hardware pass: A/B 3,384/3,383, decoded +3,384; 4,484 + 16 + 1,728 = 6,228 |
 | `uart_link_probe` | Pi ↔ STM32 USART1 protocol transport only | build pass, 4,816 + 12 + 1,716 = 6,544; hardware pending |
+| `rtos_drive` | FreeRTOS drive + UART DMA + MPU6050 on I2C2 | build + flash + IMU hardware pass, 25,204 + 360 + 14,040 = 39,604 |
 
-The host regression passes with CTest: 6/6 (`sil_firmware_ci`, PID,
-mecanum IK, AHRS, remote-control and encoder tests).
+The host regression passes with CTest: 8/8 (`sil_firmware_ci`, PID,
+mecanum IK, AHRS, remote-control, encoder, stall and MPU6050 tests).
+
+The MPU6050 hardware path was closed on 2026-08-29. Build and flash with the
+ST-Link path verified on this chassis (the probe's old `0x1ba01477` SWD IDCODE
+is rejected by OpenOCD 0.12), then run the watcher on the Pi. It sends heartbeat
+only, so it does not release the motors from their stopped state:
+
+```sh
+make TARGET=rtos_drive RTOS=1 flash-stlink
+python3 tools/imu_watch.py --duration 15
+```
+
+The accepted run received 754 ODOM samples at about 50 Hz with zero CRC
+failures, unit quaternions, non-zero gyro data and `error_flags=0`. The observed
+stationary Y-axis gyro bias was about +0.045 rad/s; bias calibration remains the
+next IMU accuracy task.
 
 Hardware verification completed during the same bring-up sequence:
 
