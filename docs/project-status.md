@@ -423,8 +423,9 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
 - **CSI/headless 独立入口已合入并通过 Pi 回归。** `perception/detection/yolo_detect.py`
   默认使用 `Picamera2` 的 IMX219 CSI 输入、脚本同目录模型路径和 console 状态输出；
   `--max-frames 20` 可做有界烟雾测试，`--camera usb` 保留 USB/OpenCV 回退，`--display`
-  只在有桌面时启用。解析/NMS 已有无相机单元测试。当前仍是独立命令行工具，尚未发布 ROS 2
-  图像或检测话题，后者是下一步 M5 集成。2026-08-29 在 Pi 5 + IMX219 上以该正式入口
+  只在有桌面时启用。解析/NMS 已有无相机单元测试。M5 已新增 `mcr_perception`：宿主机检测
+  进程通过 loopback UDP 发送版本化 JSON，Docker 内桥接节点发布 `/perception/detections`
+  和 `/perception/status`；CSI 仍不进入容器。2026-08-29 在 Pi 5 + IMX219 上以该正式入口
   完成 20 帧 headless 连续测试，端到端 4.52 FPS、无异常退出；测试画面没有超过阈值的目标，
   因而正常报告 0 个检测。
 
@@ -573,7 +574,8 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   ToF、Nav2 尚未上真机；ToF 驱动已完成并通过 host/交叉编译验证，接线后需用 `TOF=1`
   target 烧录验收。
   LD06 已接入 `robot.launch.py`（见上文），但仍未与真实里程计、
-  TF 闭环和 SLAM 形成整车链路；IMX219/YOLO 只完成 Pi 侧独立验证，仓库内仍无 CSI 相机节点。
+  TF 闭环和 SLAM 形成整车链路；IMX219/YOLO 的宿主机到 ROS 2 检测桥已实现，仍待在重新启动的
+  ROS 容器中完成端到端话题验收。
   NRF24L01 曾完成真机验收，当前车端模块已故障下线，不能写成当前可用。
 - 机械臂：只有 host protocol 与 SIL 骨架，硬件缺货未到（智能总线舵机版），见 [manipulator/docs/decision-log.md](../manipulator/docs/decision-log.md)。
 

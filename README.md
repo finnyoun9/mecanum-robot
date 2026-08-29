@@ -182,12 +182,15 @@ python perception/camera/calibration.py
 # YOLO 目标检测（Pi CSI，headless 烟雾测试）
 python3 perception/detection/yolo_detect.py --camera csi --max-frames 20
 
+# 在 ROS Docker 中启动检测桥接；另一个 Pi 宿主机终端执行带 --ros-udp-port 的 YOLO 命令
+ros2 launch mcr_perception perception_bridge.launch.py
+
 # 激光三角法 3D 扫描
 cd perception/laser_triangulation
 python point_cloud_scanner.py
 ```
 
-> `yolo_detect.py` 默认走 IMX219 的 `Picamera2` CSI 入口，适合无桌面的 Pi 宿主机；详见 [perception/detection/README.md](perception/detection/README.md)。USB 摄像头使用 `--camera usb --device 0`，仅在有桌面时添加 `--display`。
+> `yolo_detect.py` 默认走 IMX219 的 `Picamera2` CSI 入口，适合无桌面的 Pi 宿主机；ROS 2 通过本机 UDP 桥接发布检测结果，详见 [perception/detection/README.md](perception/detection/README.md)。USB 摄像头使用 `--camera usb --device 0`，仅在有桌面时添加 `--display`。
 
 ## Key Skills / 核心技术展示
 

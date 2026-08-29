@@ -2,7 +2,9 @@
 """Headless-friendly YOLOv8 ONNX detection for IMX219 CSI or USB cameras."""
 import argparse
 from dataclasses import dataclass
+import json
 from pathlib import Path
+import socket
 import time
 from typing import Iterable
 
@@ -28,6 +30,34 @@ class Detection:
     @property
     def label(self) -> str:
         return CLASSES[self.class_id]
+
+
+def detection_message(frame_id: int, frame_width: int, frame_height: int,
+                      detections: list[Detection]) -> bytes:
+    """Return the versioned, transport-neutral detection packet.
+
+    This intentionally uses only the Python standard library: the CSI camera
+    stays on Raspberry Pi OS while ROS 2 runs in the project's Docker image.
+    The ROS bridge republishes this packet as a ROS topic on the same host.
+    """
+    message = {
+        "schema": "mcr.perception.detections.v1",
+        "frame_id": frame_id,
+        "stamp_ns": time.time_ns(),
+        "width": frame_width,
+        "height": frame_height,
+        "detections": [
+            {
+                "class_id": item.class_id,
+                "label": item.label,
+                "confidence": round(item.confidence, 4),
+                "bbox": {"x1": item.x1, "y1": item.y1,
+                         "x2": item.x2, "y2": item.y2},
+            }
+            for item in detections
+        ],
+    }
+    return json.dumps(message, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
 
 
 def preprocess(frame_rgb: np.ndarray) -> np.ndarray:
@@ -134,6 +164,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--display", action="store_true", help="show an OpenCV window (desktop only)")
     parser.add_argument("--max-frames", type=int, default=0, help="0 runs until Ctrl-C; useful for smoke tests")
     parser.add_argument("--print-every", type=int, default=10, help="headless status interval in frames")
+    parser.add_argument("--ros-udp-port", type=int, default=0,
+                        help="send result JSON to the local ROS bridge; 0 disables it")
+    parser.add_argument("--ros-udp-host", default="127.0.0.1",
+                        help="ROS bridge host; default stays local to the Pi")
     return parser.parse_args()
 
 
@@ -141,7 +175,8 @@ def main() -> int:
     args = parse_args()
     if not args.model.is_file():
         raise SystemExit(f"model not found: {args.model}; place yolov8n.onnx in perception/detection/")
-    if args.width <= 0 or args.height <= 0 or args.max_frames < 0 or args.print_every <= 0:
+    if (args.width <= 0 or args.height <= 0 or args.max_frames < 0
+            or args.print_every <= 0 or not 0 <= args.ros_udp_port <= 65535):
         raise SystemExit("width, height and print-every must be positive; max-frames must be non-negative")
     try:
         import onnxruntime as ort
@@ -154,12 +189,18 @@ def main() -> int:
     input_name = session.get_inputs()[0].name
     read_frame, close_camera = open_camera(args.camera, args.width, args.height, args.device)
     print(f"YOLO ready: camera={args.camera} {args.width}x{args.height}, headless={not args.display}")
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) if args.ros_udp_port else None
+    if udp_socket:
+        print(f"ROS bridge output: udp://{args.ros_udp_host}:{args.ros_udp_port}")
     frame_count, started = 0, time.monotonic()
     try:
         while args.max_frames == 0 or frame_count < args.max_frames:
             frame_rgb = read_frame()
             detections = decode_predictions(session.run(None, {input_name: preprocess(frame_rgb)})[0], frame_rgb.shape[1], frame_rgb.shape[0], args.confidence, args.nms)
             frame_count += 1
+            if udp_socket:
+                udp_socket.sendto(detection_message(frame_count, frame_rgb.shape[1], frame_rgb.shape[0], detections),
+                                  (args.ros_udp_host, args.ros_udp_port))
             if frame_count % args.print_every == 0 or frame_count == 1:
                 labels = ", ".join(f"{item.label}:{item.confidence:.2f}" for item in detections[:4]) or "none"
                 print(f"frame={frame_count} detections={len(detections)} [{labels}]")
@@ -171,6 +212,8 @@ def main() -> int:
         pass
     finally:
         close_camera()
+        if udp_socket:
+            udp_socket.close()
         if args.display:
             cv2.destroyAllWindows()
     elapsed = max(time.monotonic() - started, 1e-9)

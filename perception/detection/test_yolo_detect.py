@@ -1,8 +1,9 @@
+import json
 import unittest
 
 import numpy as np
 
-from perception.detection.yolo_detect import INPUT_SIZE, decode_predictions, preprocess
+from perception.detection.yolo_detect import Detection, INPUT_SIZE, decode_predictions, detection_message, preprocess
 
 
 class TestYoloDetect(unittest.TestCase):
@@ -24,6 +25,14 @@ class TestYoloDetect(unittest.TestCase):
         detections = decode_predictions(output, 1280, 960, 0.5, 0.5)
         self.assertEqual([item.label for item in detections], ["tv", "person"])
         self.assertEqual((detections[0].x1, detections[0].y1, detections[0].x2, detections[0].y2), (320, 240, 960, 720))
+
+    def test_detection_message_is_compact_and_versioned(self):
+        payload = detection_message(7, 640, 480, [Detection(0, 0.87654, 1, 2, 30, 40)])
+        message = json.loads(payload)
+        self.assertEqual(message["schema"], "mcr.perception.detections.v1")
+        self.assertEqual(message["frame_id"], 7)
+        self.assertEqual(message["detections"][0]["label"], "person")
+        self.assertEqual(message["detections"][0]["confidence"], 0.8765)
 
 
 if __name__ == "__main__":
