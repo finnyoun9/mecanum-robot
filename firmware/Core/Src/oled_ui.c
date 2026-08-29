@@ -43,19 +43,15 @@ static const uint8_t *glyph(char c) {
     return blank;
 }
 
-/* Native 5x7 glyphs: a one-pixel stroke and 6x12 character grid.  The former
- * stretched font made compact status text look bold and crowded on 0.96 inch
- * panels; this keeps all diagnostics readable in one static page. */
+/* Native 5x7 glyphs: a one-pixel stroke and 6x12 character grid. */
 static void pixel(uint8_t *frame, uint8_t x, uint8_t y) {
     if (x < SSD1306_WIDTH && y < SSD1306_HEIGHT) {
         frame[(uint16_t)(y / 8U) * SSD1306_WIDTH + x] |= (uint8_t)(1U << (y % 8U));
     }
 }
 
-static void text(uint8_t *frame, uint8_t row, uint8_t col, const char *s) {
-    uint8_t x = (uint8_t)(col * 6U);
-    uint8_t y = (uint8_t)(row * 12U);
-    if (row >= 4U || s == NULL) return;
+static void text_at(uint8_t *frame, uint8_t x, uint8_t y, const char *s) {
+    if (s == NULL) return;
 
     while (*s != '\0' && x + 5U < SSD1306_WIDTH) {
         const uint8_t *g = glyph(*s++);
@@ -68,6 +64,28 @@ static void text(uint8_t *frame, uint8_t row, uint8_t col, const char *s) {
             }
         }
         x = (uint8_t)(x + 6U);
+    }
+}
+
+/* The distance is the chassis UI's primary action signal. A 2x glyph gives a
+ * crisp 10x14 digit without a second font table or dynamic framebuffer. */
+static void large_text(uint8_t *frame, uint8_t x, uint8_t y, const char *s) {
+    if (s == NULL) return;
+    while (*s != '\0' && x + 9U < SSD1306_WIDTH) {
+        const uint8_t *g = glyph(*s++);
+        for (uint8_t glyph_x = 0; glyph_x < 5U; ++glyph_x) {
+            for (uint8_t glyph_y = 0; glyph_y < 7U; ++glyph_y) {
+                if ((g[glyph_x] & (uint8_t)(1U << glyph_y)) != 0U) {
+                    for (uint8_t dx = 0; dx < 2U; ++dx) {
+                        for (uint8_t dy = 0; dy < 2U; ++dy) {
+                            pixel(frame, (uint8_t)(x + glyph_x * 2U + dx),
+                                  (uint8_t)(y + glyph_y * 2U + dy));
+                        }
+                    }
+                }
+            }
+        }
+        x = (uint8_t)(x + 12U);
     }
 }
 
@@ -90,51 +108,42 @@ static void signed_two(char out[4], int16_t value) {
 void oled_ui_render(uint8_t frame[SSD1306_FRAME_BYTES], uint8_t page,
                     const oled_ui_data_t *data) {
     char value[6];
-    char line[17];
+    char line[22];
     char wheel[4];
     char gyro[3][4];
 
     if (frame == NULL || data == NULL) return;
     (void)page;
     memset(frame, 0, SSD1306_FRAME_BYTES);
-    line[0] = 'T'; line[1] = 'O'; line[2] = 'F'; line[3] = ':';
+    /* Header, then the one field a driver must read at a glance. */
+    text_at(frame, 0U, 0U, "TOF RANGE MM");
     if (data->tof_valid) {
         unsigned_dec(value, data->tof_mm, 4U);
-        memcpy(&line[4], value, 4U);
     } else {
-        memcpy(&line[4], "----", 4U);
+        memcpy(value, "----", 5U);
     }
-    line[8] = data->comm_ok ? 'O' : 'X';
-    line[9] = data->emergency_stop ? 'S' : 'R';
-    line[10] = 'E'; line[11] = ':';
-    line[12] = "0123456789ABCDEF"[data->error_flags >> 4];
-    line[13] = "0123456789ABCDEF"[data->error_flags & 0x0FU];
-    line[14] = '\0';
-    text(frame, 0, 0, line);
+    large_text(frame, 39U, 10U, value);
 
-    for (uint8_t i = 0; i < 4U; ++i) {
-        signed_two(wheel, (int16_t)(data->target_deci_rads[i] / 10));
-        line[0] = i < 2U ? (i == 0U ? 'F' : 'F') : 'R';
-        line[1] = (i == 0U || i == 2U) ? 'L' : 'R';
-        line[2] = ':';
-        memcpy(&line[3], wheel, 3U);
-        if ((i & 1U) == 0U) {
-            line[6] = ' ';
-            line[7] = i == 0U ? 'F' : 'R';
-            line[8] = 'R'; line[9] = ':';
-            signed_two(wheel, (int16_t)(data->target_deci_rads[i + 1U] / 10));
-            memcpy(&line[10], wheel, 3U);
-            line[13] = '\0';
-            text(frame, (uint8_t)(1U + i / 2U), 0, line);
-        }
-    }
+    line[0] = 'L'; line[1] = 'I'; line[2] = 'N'; line[3] = 'K'; line[4] = ':';
+    line[5] = data->comm_ok ? 'O' : 'X'; line[6] = 'K'; line[7] = ' ';
+    line[8] = data->emergency_stop ? 'S' : 'R'; line[9] = 'U'; line[10] = 'N';
+    line[11] = ' '; line[12] = 'E'; line[13] = ':';
+    line[14] = "0123456789ABCDEF"[data->error_flags >> 4];
+    line[15] = "0123456789ABCDEF"[data->error_flags & 0x0FU]; line[16] = '\0';
+    text_at(frame, 0U, 28U, line);
 
     for (uint8_t i = 0; i < 3U; ++i) {
         signed_two(gyro[i], (int16_t)(data->gyro_milli_rads[i] / 1000));
     }
-    line[0] = 'G'; line[1] = ':';
-    memcpy(&line[2], gyro[0], 3U); line[5] = ',';
-    memcpy(&line[6], gyro[1], 3U); line[9] = ',';
-    memcpy(&line[10], gyro[2], 3U); line[13] = '\0';
-    text(frame, 3, 0, line);
+    line[0] = 'G'; line[1] = ':'; memcpy(&line[2], gyro[0], 3U); line[5] = ',';
+    memcpy(&line[6], gyro[1], 3U); line[9] = ','; memcpy(&line[10], gyro[2], 3U);
+    line[13] = '\0'; text_at(frame, 0U, 40U, line);
+
+    line[0] = 'W'; line[1] = ':';
+    for (uint8_t i = 0; i < 4U; ++i) {
+        signed_two(wheel, (int16_t)(data->target_deci_rads[i] / 10));
+        memcpy(&line[2U + i * 4U], wheel, 3U);
+        line[5U + i * 4U] = i == 3U ? '\0' : ' ';
+    }
+    text_at(frame, 0U, 52U, line);
 }

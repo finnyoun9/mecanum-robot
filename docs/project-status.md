@@ -361,13 +361,16 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   NULL bus、有效/越界结果和三次缺帧超时；SSD1306 3 组测试覆盖初始化清屏、整帧大小和
   bus failure。`TOF=1` 真机 target 在 `-Wall -Werror` 下为 **text 26956 / data 360 /
   bss 14056 B**，相对 IMU-only 增加约 1.8 KiB flash、16 B RAM。
-- ✅ **真机闭环通过**：亚博 YB-MVV18 VL53L0X 在 `0x29` 完成型号校验、SPAD/VHV/phase
-  校准和连续测距；修正 factory SPAD 读取后得到 raw status 11 与 771 mm。正式 FreeRTOS
-  固件 15 秒收到 754 帧、0 CRC、非零距离、`error_flags=0`。SSD1306 `0x3C` 完成地址
-  探测、初始化和全屏点亮。两者与 MPU6050 共用 PB10/PB11。VL53L1X、SH1106 不兼容。
-- ✅ **OLED 单页状态界面**：`OLED=1` 同时显示 ToF、链路/运行状态/错误码、四轮目标速度和
-  gyro。字体按约 1.5× 像素放大以适配 0.96 寸面板，单个 1024 B 静态 framebuffer 驻留 BSS，
-  无动态分配，并以 1 Hz 刷新。
+- ✅ **YB-MVV18 真机闭环通过（并记录 F1 I²C 读取缺陷）。** 模块在 `0x29` 完成型号校验、
+  SPAD/VHV/phase 校准和连续测距。初版以一次 12-byte burst 读取 `0x14..0x1F`，在此模块与
+  STM32F1 I2C2 组合上会把距离低字节复制为高字节，伪造 `0x0101/0x0202/0x0303`
+  （257/514/771 mm）三档；安全探针同时读取证明单字节值连续为如 `0x03C3/0x039F/0x03B6`。
+  `tof_read_mm()` 已改为分别读取状态、MSB、LSB，并有模拟该 burst 缺陷的回归测试。修复后 Pi
+  端 8 秒收到 401 帧、CRC 0、38 个不同距离值（约 931–962 mm）、`error_flags=0`，闭环验收通过。
+  SSD1306 `0x3C` 与 MPU6050 共用 PB10/PB11；VL53L1X、SH1106 不兼容。
+- ✅ **OLED 分层仪表盘**：`OLED=1` 顶部标注单位、中部以 2× 5×7 字体突出 ToF 距离，底部只保留
+  链路/运行/错误、陀螺仪和四轮命令摘要。单个 1024 B 静态 framebuffer 驻留 BSS，无动态分配，
+  以 1 Hz 刷新。
   已以 `stm32-smart-home-ota` 实机验证的 SSD1306 传输格式（7 位 `0x3C`，即模组丝印
   的 8 位写地址 `0x78`）修正显示；每次换页一次性刷新整帧，消除逐页写入的重影。target
   为 **text 29416 / data 360 / bss 15120 B**；CTest 增至 **11/11**。
