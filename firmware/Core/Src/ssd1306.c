@@ -11,6 +11,7 @@
 #include "ssd1306.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #ifdef STM32F103xB
 #include "stm32f1xx_hal.h"
@@ -25,32 +26,54 @@
 #define SSD1306_CHUNK_BYTES    32U
 
 static I2C_HandleTypeDef *bus = NULL;
+static uint8_t tx[SSD1306_CHUNK_BYTES + 1U];
 
 void ssd1306_set_i2c(void *hi2c) {
     bus = (I2C_HandleTypeDef *)hi2c;
 }
 
 static bool send(uint8_t control, const uint8_t *data, uint16_t size) {
-    if (bus == NULL || data == NULL || size == 0U) return false;
-    return HAL_I2C_Mem_Write(bus, SSD1306_HAL_ADDR, control,
-                             I2C_MEMADD_SIZE_8BIT, (uint8_t *)data, size,
-                             SSD1306_TIMEOUT_MS) == HAL_OK;
+    if (bus == NULL || data == NULL || size == 0U || size > SSD1306_CHUNK_BYTES) {
+        return false;
+    }
+    /* Send the SSD1306 control byte as data, exactly as the known-good
+     * driver in stm32-smart-home-ota does. Some clone panels are stricter
+     * about this than HAL's memory-write convenience wrapper. */
+    tx[0] = control;
+    memcpy(&tx[1], data, size);
+    return HAL_I2C_Master_Transmit(bus, SSD1306_HAL_ADDR, tx, (uint16_t)(size + 1U),
+                                   SSD1306_TIMEOUT_MS) == HAL_OK;
 }
 
-static bool set_full_window(void) {
-    static const uint8_t window[] = {
-        0x21, 0x00, SSD1306_WIDTH - 1U,
-        0x22, 0x00, (SSD1306_HEIGHT / 8U) - 1U,
-    };
-    return send(SSD1306_CONTROL_CMD, window, sizeof(window));
+static bool set_page_window(uint8_t page) {
+    uint8_t page_command = (uint8_t)(0xB0U | page);
+    uint8_t high_column = 0x10U;
+    uint8_t low_column = 0x00U;
+    return page < (SSD1306_HEIGHT / 8U) &&
+           send(SSD1306_CONTROL_CMD, &page_command, 1U) &&
+           send(SSD1306_CONTROL_CMD, &high_column, 1U) &&
+           send(SSD1306_CONTROL_CMD, &low_column, 1U);
 }
 
 bool ssd1306_write_frame(const uint8_t *frame, uint16_t size) {
-    if (frame == NULL || size != SSD1306_FRAME_BYTES || !set_full_window()) {
+    if (frame == NULL || size != SSD1306_FRAME_BYTES) {
         return false;
     }
-    for (uint16_t offset = 0; offset < size; offset += SSD1306_CHUNK_BYTES) {
-        if (!send(SSD1306_CONTROL_DATA, &frame[offset], SSD1306_CHUNK_BYTES)) {
+    for (uint8_t page = 0; page < (SSD1306_HEIGHT / 8U); ++page) {
+        if (!ssd1306_write_page(page, &frame[(uint16_t)page * SSD1306_WIDTH])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ssd1306_write_page(uint8_t page, const uint8_t data[SSD1306_WIDTH]) {
+    if (data == NULL || !set_page_window(page)) {
+        return false;
+    }
+    for (uint16_t offset = 0; offset < SSD1306_WIDTH;
+         offset += SSD1306_CHUNK_BYTES) {
+        if (!send(SSD1306_CONTROL_DATA, &data[offset], SSD1306_CHUNK_BYTES)) {
             return false;
         }
     }
@@ -59,10 +82,12 @@ bool ssd1306_write_frame(const uint8_t *frame, uint16_t size) {
 
 bool ssd1306_clear(void) {
     static const uint8_t zeros[SSD1306_CHUNK_BYTES] = {0};
-    if (!set_full_window()) return false;
-    for (uint16_t offset = 0; offset < SSD1306_FRAME_BYTES;
-         offset += SSD1306_CHUNK_BYTES) {
-        if (!send(SSD1306_CONTROL_DATA, zeros, sizeof(zeros))) return false;
+    for (uint8_t page = 0; page < (SSD1306_HEIGHT / 8U); ++page) {
+        if (!set_page_window(page)) return false;
+        for (uint8_t chunk = 0; chunk < SSD1306_WIDTH / SSD1306_CHUNK_BYTES;
+             ++chunk) {
+            if (!send(SSD1306_CONTROL_DATA, zeros, sizeof(zeros))) return false;
+        }
     }
     return true;
 }

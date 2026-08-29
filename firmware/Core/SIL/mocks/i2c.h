@@ -29,6 +29,8 @@ int HAL_I2C_Mem_Read(I2C_HandleTypeDef *hi2c, uint16_t dev_addr, uint16_t mem_ad
                      uint16_t mem_add_size, uint8_t *data, uint16_t size, uint32_t timeout);
 int HAL_I2C_Mem_Write(I2C_HandleTypeDef *hi2c, uint16_t dev_addr, uint16_t mem_addr,
                       uint16_t mem_add_size, uint8_t *data, uint16_t size, uint32_t timeout);
+int HAL_I2C_Master_Transmit(I2C_HandleTypeDef *hi2c, uint16_t dev_addr,
+                            uint8_t *data, uint16_t size, uint32_t timeout);
 
 #ifdef __cplusplus
 }

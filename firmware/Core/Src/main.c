@@ -26,6 +26,8 @@
 #include "ahrs.h"
 #include "mpu6050.h"
 #include "tof_sensor.h"
+#include "ssd1306.h"
+#include "oled_ui.h"
 #include "nrf24l01.h"
 #include "remote_control.h"
 
@@ -422,12 +424,47 @@ void CtrlTask(void *pvParameters) {
 /*  SensorTask: ToF + IMU at respective rates                                */
 /* ======================================================================== */
 
+#ifdef HW_OLED
+static uint8_t oled_frame[SSD1306_FRAME_BYTES];
+
+static int16_t oled_scaled_i16(float value, float scale) {
+    float scaled = value * scale;
+    if (scaled > 32767.0f) return INT16_MAX;
+    if (scaled < -32768.0f) return INT16_MIN;
+    return (int16_t)scaled;
+}
+
+static void oled_render_state(uint8_t page) {
+    const robot_state_t *state = robot_get_state();
+    oled_ui_data_t data = {0};
+
+    data.tof_mm = state->tof_distance_mm;
+    data.error_flags = state->error_flags;
+    data.comm_ok = !state->comm_timeout;
+    data.emergency_stop = state->emergency_stop_active;
+    data.qw_centi = oled_scaled_i16(state->imu_q[0], 100.0f);
+    for (uint8_t i = 0; i < 4U; ++i) {
+        data.target_deci_rads[i] = oled_scaled_i16(state->target_w[i], 10.0f);
+        data.measured_deci_rads[i] = oled_scaled_i16(state->measured_w[i], 10.0f);
+    }
+    for (uint8_t i = 0; i < 3U; ++i) {
+        data.gyro_milli_rads[i] = oled_scaled_i16(state->imu_gyro[i], 1000.0f);
+    }
+    oled_ui_render(oled_frame, page, &data);
+}
+#endif
+
 void SensorTask(void *pvParameters) {
     (void)pvParameters;
 
     static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f};
 #ifndef HW_IMU_ONLY
     static uint8_t tof_divider = 0;
+#endif
+#ifdef HW_OLED
+    static uint8_t oled_page = 0;
+    static uint8_t oled_frames_on_page = 0;
+    static bool oled_ok = false;
 #endif
     static bool initialized = false;
     const float xImuDt = 0.010f; /* matches this task's 10ms period */
@@ -443,6 +480,13 @@ void SensorTask(void *pvParameters) {
         mpu6050_init();
 #ifndef HW_IMU_ONLY
         tof_init();
+#endif
+#ifdef HW_OLED
+        oled_ok = ssd1306_init();
+        if (oled_ok) {
+            oled_render_state(oled_page);
+            oled_ok = ssd1306_write_frame(oled_frame, sizeof(oled_frame));
+        }
 #endif
         initialized = true;
     }
@@ -473,6 +517,19 @@ void SensorTask(void *pvParameters) {
             tof_status_t tof_status;
             uint16_t tof_mm = tof_read_mm(&tof_status);
             robot_update_tof(tof_mm, tof_status == TOF_TIMEOUT);
+#ifdef HW_OLED
+            if (oled_ok) {
+                /* One contiguous transfer avoids a visible 400 ms cascade
+                 * of eight page writes. Refreshing only when changing page
+                 * also prevents the status text from overlapping itself. */
+                if (++oled_frames_on_page >= 8U) {
+                    oled_frames_on_page = 0;
+                    oled_page = (uint8_t)((oled_page + 1U) % OLED_UI_PAGE_COUNT);
+                    oled_render_state(oled_page);
+                    oled_ok = ssd1306_write_frame(oled_frame, sizeof(oled_frame));
+                }
+            }
+#endif
         }
 #endif
 

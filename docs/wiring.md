@@ -376,6 +376,7 @@ TB6612 有两组电源引脚，设计上已隔离电机噪声：
 - [ ] 这条 I2C2 在 STM32 上，Pi 的 `i2cdetect` 看不到。MPU6050 用
   `python3 tools/imu_watch.py` 验收；接好 VL53L0X 后烧录 `TOF=1` target，运行
   `python3 tools/tof_watch.py`，应看到非零距离且无 `TOF_TIMEOUT`。
+  SSD1306 接好后用 `TOF=1 OLED=1` 构建，屏幕会自动轮播系统总览、四轮速度和 IMU 页面。
 
 ### 第四步：依次连接电机，空转测试
 

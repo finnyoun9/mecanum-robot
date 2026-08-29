@@ -29,6 +29,7 @@
 #include "encoder.h"
 #include "mpu6050.h"
 #include "tof_sensor.h"
+#include "ssd1306.h"
 
 #include <stddef.h>
 
@@ -335,7 +336,10 @@ static void i2c_sensor_init(void) {
     HAL_GPIO_Init(GPIOB, &gpio);
 
     hi2c2.Instance             = I2C2;
-    hi2c2.Init.ClockSpeed      = 400000U;          /* both sensors are Fast-mode capable */
+    /* 100 kHz is shared safely by the OLED, MPU6050 and VL53L0X on the
+     * chassis' jumper-wire bus; the OLED from the OTA project is specified
+     * and proven at Standard-mode only. */
+    hi2c2.Init.ClockSpeed      = 100000U;
     hi2c2.Init.DutyCycle       = I2C_DUTYCYCLE_2;
     hi2c2.Init.OwnAddress1     = 0;
     hi2c2.Init.AddressingMode  = I2C_ADDRESSINGMODE_7BIT;
@@ -349,6 +353,7 @@ static void i2c_sensor_init(void) {
      * by name — see mpu6050_set_i2c()'s contract. */
     mpu6050_set_i2c(&hi2c2);
     tof_sensor_set_i2c(&hi2c2);
+    ssd1306_set_i2c(&hi2c2);
 }
 
 /* ======================================================================== */

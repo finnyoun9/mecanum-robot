@@ -20,6 +20,7 @@ set(FIRMWARE_SRC
     Src/remote_control.c
     Src/robot_control.c
     Src/ssd1306.c
+    Src/oled_ui.c
     Src/tof_sensor.c
 
     # Mock layer
@@ -96,10 +97,11 @@ if(BUILD_TESTING)
     add_executable(test_ssd1306        Test/test_ssd1306.c       Src/ssd1306.c)
     target_include_directories(test_ssd1306 PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/SIL/mocks)
+    add_executable(test_oled_ui        Test/test_oled_ui.c        Src/oled_ui.c)
 
     foreach(host_test test_pid test_mecanum_ik test_ahrs test_remote_control
                       test_encoder test_stall test_mpu6050 test_tof_sensor
-                      test_ssd1306)
+                      test_ssd1306 test_oled_ui)
         target_include_directories(${host_test} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Inc)
         # -UNDEBUG keeps assert() live regardless of CMAKE_BUILD_TYPE.

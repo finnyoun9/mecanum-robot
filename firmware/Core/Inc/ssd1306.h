@@ -20,6 +20,9 @@ bool ssd1306_init(void);
 /** Write one page-formatted frame (8 vertical pixels per byte). */
 bool ssd1306_write_frame(const uint8_t *frame, uint16_t size);
 
+/** Write one 128-byte page (page 0..7), suitable for bounded RTOS updates. */
+bool ssd1306_write_page(uint8_t page, const uint8_t data[SSD1306_WIDTH]);
+
 /** Clear display RAM without allocating a framebuffer. */
 bool ssd1306_clear(void);
 

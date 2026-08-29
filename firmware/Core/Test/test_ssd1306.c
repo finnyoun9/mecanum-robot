@@ -22,20 +22,19 @@ int HAL_I2C_Mem_Read(I2C_HandleTypeDef *hi2c, uint16_t dev_addr,
     return HAL_ERROR;
 }
 
-int HAL_I2C_Mem_Write(I2C_HandleTypeDef *hi2c, uint16_t dev_addr,
-                      uint16_t mem_addr, uint16_t mem_add_size, uint8_t *data,
-                      uint16_t size, uint32_t timeout) {
+int HAL_I2C_Master_Transmit(I2C_HandleTypeDef *hi2c, uint16_t dev_addr,
+                            uint8_t *data, uint16_t size, uint32_t timeout) {
     assert(hi2c == &fake_bus);
     assert(dev_addr == (SSD1306_I2C_ADDR << 1));
-    assert(mem_add_size == I2C_MEMADD_SIZE_8BIT);
     assert(timeout <= 5 && timeout != HAL_MAX_DELAY);
+    assert(size >= 2U);
     if (nack_all) return HAL_ERROR;
     ++calls;
-    if (mem_addr == 0x00 && size > 0) {
-        if (calls == 1) first_command = data[0];
-        last_command = data[size - 1];
-    } else if (mem_addr == 0x40) {
-        data_bytes = (uint16_t)(data_bytes + size);
+    if (data[0] == 0x00U) {
+        if (calls == 1) first_command = data[1];
+        last_command = data[size - 1U];
+    } else if (data[0] == 0x40U) {
+        data_bytes = (uint16_t)(data_bytes + size - 1U);
     }
     return HAL_OK;
 }
@@ -70,6 +69,17 @@ static void test_full_frame_and_size_guard(void) {
     printf("PASS test_full_frame_and_size_guard\n");
 }
 
+static void test_single_page_is_bounded(void) {
+    static uint8_t page[SSD1306_WIDTH];
+    setup();
+    memset(page, 0x5A, sizeof(page));
+    assert(!ssd1306_write_page(8U, page));
+    assert(calls == 0);
+    assert(ssd1306_write_page(3U, page));
+    assert(data_bytes == SSD1306_WIDTH);
+    printf("PASS test_single_page_is_bounded\n");
+}
+
 static void test_bus_errors_fail_closed(void) {
     setup();
     nack_all = true;
@@ -82,6 +92,7 @@ static void test_bus_errors_fail_closed(void) {
 int main(void) {
     test_init_sends_commands_and_clears_ram();
     test_full_frame_and_size_guard();
+    test_single_page_is_bounded();
     test_bus_errors_fail_closed();
     printf("\nAll SSD1306 tests passed.\n");
     return 0;

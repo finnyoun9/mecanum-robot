@@ -30,6 +30,7 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `i2c_bus_probe` | no-motor MPU6050/VL53L0X scan + SSD1306 all-pixels test | hardware pass |
 | `rtos_drive` | FreeRTOS drive + UART DMA + MPU6050 on I2C2 | build + flash + IMU hardware pass, 25,204 + 360 + 14,040 = 39,604 |
 | `rtos_drive TOF=1` | adds VL53L0X continuous ranging on shared I2C2 | hardware pass, 26,956 + 360 + 14,056 = 41,372 |
+| `rtos_drive TOF=1 OLED=1` | adds three-page SSD1306 chassis UI | hardware pass, 29,416 + 360 + 15,120 = 44,896 |
 
 The host regression passes with CTest: 10/10 (`sil_firmware_ci`, PID,
 mecanum IK, AHRS, remote-control, encoder, stall, MPU6050, VL53L0X and SSD1306).
@@ -61,6 +62,17 @@ failures, a valid 771 mm range and `error_flags=0`. The SSD1306 at `0x3c` also
 passed address detection, initialization, clear and all-pixels-on testing on the
 same bus. `i2c_bus_probe` is the no-motor diagnostic target for repeating these
 checks.
+
+Enable the chassis status UI with:
+
+```sh
+make TARGET=rtos_drive RTOS=1 TOF=1 OLED=1 flash-stlink
+```
+
+It rotates overview, wheel-speed and IMU pages. It uses the same SSD1306
+page-address and control-byte transport proven in `stm32-smart-home-ota`.
+The module's `0x78` address-select silk screen is its 8-bit write address;
+the firmware correctly uses 7-bit `0x3C`.
 
 Hardware verification completed during the same bring-up sequence:
 
