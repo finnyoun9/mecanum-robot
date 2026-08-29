@@ -179,15 +179,15 @@ pip install opencv-python numpy open3d onnxruntime
 # 相机标定
 python perception/camera/calibration.py
 
-# YOLO 目标检测
-python perception/detection/yolo_detect.py
+# YOLO 目标检测（Pi CSI，headless 烟雾测试）
+python3 perception/detection/yolo_detect.py --camera csi --max-frames 20
 
 # 激光三角法 3D 扫描
 cd perception/laser_triangulation
 python point_cloud_scanner.py
 ```
 
-> 当前 `yolo_detect.py` 仍是通用 OpenCV `VideoCapture`/桌面显示版本；IMX219 真机验证使用宿主机 `Picamera2 + ONNX Runtime`，正式 CSI/headless 入口尚待合入，不能直接把上面的命令当作 Pi 5 已验收启动方式。
+> `yolo_detect.py` 默认走 IMX219 的 `Picamera2` CSI 入口，适合无桌面的 Pi 宿主机；详见 [perception/detection/README.md](perception/detection/README.md)。USB 摄像头使用 `--camera usb --device 0`，仅在有桌面时添加 `--display`。
 
 ## Key Skills / 核心技术展示
 

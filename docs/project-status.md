@@ -417,9 +417,11 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   运行仓库 `yolov8n.onnx`，20 帧连续测试平均推理 163.8 ms、端到端 6.05 FPS；当前场景
   两个显示器在 20 帧中共得到 38 个 `tv` 检测框，最高置信度 0.741，另一次人体局部检测
   置信度 0.883。该结果证明 Pi 5 CPU 可承担低速视觉检测，不代表已完成 ROS 2 相机节点。
-- **仓库 CSI 入口仍待实现。** `perception/detection/yolo_detect.py` 目前使用
-  `cv2.VideoCapture(0)`、相对路径 `code/yolov8n.onnx` 和 `cv2.imshow()`，不适合当前
-  IMX219/libcamera + headless 部署；本次仅完成独立真机验证，未把临时测试脚本提交进仓库。
+- **CSI/headless 独立入口已合入（待 Pi 回归）。** `perception/detection/yolo_detect.py`
+  默认使用 `Picamera2` 的 IMX219 CSI 输入、脚本同目录模型路径和 console 状态输出；
+  `--max-frames 20` 可做有界烟雾测试，`--camera usb` 保留 USB/OpenCV 回退，`--display`
+  只在有桌面时启用。解析/NMS 已有无相机单元测试。当前仍是独立命令行工具，尚未发布 ROS 2
+  图像或检测话题，后者是下一步 M5 集成。
 
 ### M4：Pi↔STM32 真机链路 bring-up（2026-08-28，**链路已闭合**）
 
