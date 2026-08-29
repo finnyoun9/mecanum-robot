@@ -32,7 +32,8 @@ class UdpDetectionBridge final : public rclcpp::Node {
     open_socket(bind_address, static_cast<uint16_t>(port));
     poll_timer_ = create_wall_timer(std::chrono::milliseconds(10), [this] { poll_socket(); });
     status_timer_ = create_wall_timer(std::chrono::seconds(1), [this] { publish_status(); });
-    RCLCPP_INFO(get_logger(), "bridging UDP %s:%d to %s", bind_address.c_str(), port, topic.c_str());
+    RCLCPP_INFO(get_logger(), "bridging UDP %s:%d to %s", bind_address.c_str(),
+                static_cast<int>(port), topic.c_str());
   }
 
   ~UdpDetectionBridge() override {
