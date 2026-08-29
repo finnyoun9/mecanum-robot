@@ -34,7 +34,15 @@ CFLAGS += -I. -I$(ROOT)/Inc -I$(CMSIS_INC) -I$(CMSIS_DEV) -I$(HAL_INC)
 CFLAGS += -I$(ROOT)/../../shared
 
 LDFLAGS  = -mcpu=cortex-m3 -mthumb -T STM32F103XB_FLASH.ld
-LDFLAGS += -Wl,--gc-sections -nostartfiles -specs=nosys.specs -lc -lm
+LDFLAGS += -Wl,--gc-sections -nostartfiles -specs=nosys.specs
+
+# Libraries must follow the objects on the link line, not precede them: ld
+# resolves left to right, so -lc -lm placed in LDFLAGS (which comes first)
+# were scanned before any undefined symbol existed and then never revisited.
+# This only surfaced when SensorTask started referencing ahrs.c and pulled
+# in sqrtf -> __errno; before that --gc-sections dropped the whole AHRS
+# section and nothing needed libm.
+LDLIBS = -lc -lm
 
 C_SRCS  = $(TARGET)_main.c system_clock_config.c
 C_SRCS += $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx/system_stm32f1xx.c
@@ -52,7 +60,7 @@ C_SRCS += main.c robot_control.c motor.c encoder.c pid.c mecanum_ik.c ahrs.c \
           mpu6050.c tof_sensor.c nrf24l01.c remote_control.c protocol.c
 # FreeRTOS kernel (ARM_CM3 port, heap_4 dynamic allocation)
 C_SRCS += tasks.c queue.c list.c timers.c port.c heap_4.c
-CFLAGS += -I fwinc -DHW_MINIMAL_TASKS
+CFLAGS += -I fwinc -DHW_MINIMAL_TASKS -DHW_IMU_ONLY
 CFLAGS += -I$(FREERTOS)/include -I$(FREERTOS)/portable/GCC/ARM_CM3
 else
 # --- Bare-metal bring-up targets (no FreeRTOS) ---
@@ -72,7 +80,7 @@ vpath %.c . $(ROOT)/Src $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx $(HAL_SRC) \
 all: $(TARGET).bin
 
 $(TARGET).elf: $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 	$(SIZE) $@
 
 $(TARGET).bin: $(TARGET).elf

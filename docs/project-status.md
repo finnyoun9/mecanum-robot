@@ -289,6 +289,51 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
 - **麦轮 IK 的固有问题**：四轮减速比不一致破坏等价轮假设，带载时该轮扭矩少 2.2 倍，
   **落地必然跑偏，且改标定常量修不了**。
 
+### I2C2 外设 + MPU6050 驱动（2026-08-29，SIL/单测验证，真机未验收）
+
+**动机：`firmware_arch_main()` 缺 I2C MSP 初始化**（见"未做/未验证"），IMU 与 ToF
+两个驱动里所有 I2C 调用都是注释状态。排查后发现**它们引用的 `hi2c1` 从未在项目任何
+地方定义过**——没有 `HAL_I2C_Init`、没有 MspInit、没有时钟使能，因此
+"取消注释即可"是错的，会直接编译失败。
+
+- **总线选定 I2C2（PB10 SCL / PB11 SDA）**，与 [wiring.md:112](wiring.md#L112) 一致。
+  ⚠️ 文档 [wiring.md:255](wiring.md#L255) 另有一处写 IMU 走 I2C1/PB8-PB9，**该方案不可行**：
+  PB8 是 RL 电机的 `PWMA`。I2C1 默认脚 PB6/PB7 也与 RL 编码器冲突。
+  已核实 PB10/PB11 空闲（`rtos_drive_main.c` 中的 `GPIO_PIN_10` 是 **PA**10 = USART1 RX）。
+- **实现**（`rtos_drive_main.c` 新增 `i2c_sensor_init()`）：`GPIO_MODE_AF_OD` 开漏
+  （推挽会与总线上拉电阻打架，破坏时钟拉伸与仲裁）、`GPIO_NOPULL`（模块自带上拉）、
+  400 kHz、**阻塞模式不挂 NVIC**（刻意避开 FreeRTOS syscall 优先级天花板）。
+- **驱动改为句柄注入**（`mpu6050_set_i2c()`），沿用 `motor_set_tim()` 的既有模式：
+  驱动不预设自己挂在哪条总线上，SIL 与单测才能注入假总线。
+- ⚠️ **每次事务用有界超时 10 ms，不用 `HAL_MAX_DELAY`**：传感器未接或未供电时
+  `HAL_MAX_DELAY` 会让 `SensorTask` 永久卡死。`test_mpu6050.c` 断言了这一点。
+- ⚠️ **`mpu6050_init()` 此前无条件返回 true**，对着不存在的硬件也"成功"。现在
+  WHO_AM_I 不匹配即返回 false 且**在碰配置寄存器之前退出**。
+- **读失败返回零向量**而非脏数据：Mahony 有零模保护分支，掉帧退化为纯陀螺积分，
+  不会把姿态拽向一个假的重力方向。
+- **`SensorTask` 接入真机 target**，新增 `HW_IMU_ONLY` 只启用 IMU；ToF 半边编译掉，
+  因为 `tof_sensor.c` 仍是空壳、每次读必然超时，会把 `ERR_TOF_TIMEOUT` 永久钉在
+  Pi 看到的 `error_flags` 里，**使真故障与占位符无法区分**。
+- **顺带修掉一个潜伏的链接顺序 bug**：`-lc -lm` 原在 `LDFLAGS` 里、位于目标文件
+  **之前**，而 ld 从左到右解析，库先被扫过时还没有未定义符号、之后不再回头。
+  表现为 `sqrtf` 找不到 `__errno`。**该 bug 一直存在但被 `--gc-sections` 掩盖**
+  （此前无人引用 AHRS，整段被丢弃，libm 未被需要），`SensorTask` 一启用即暴露。
+  改为 `LDLIBS` 置于目标文件之后。
+- **验证**：`test_mpu6050` 8 项通过（覆盖六个配置寄存器实际值、WHO_AM_I 拒绝、
+  总线 NACK、未注入总线、大端解码含负数、跳过温度字节、读失败零向量、单位换算）；
+  CTest 8/8；真机 `-Wall -Werror` 干净链接，text 20860 → **25204 B**
+  （+AHRS +libm +I2C HAL）；`nm` 确认 `SensorTask` / `mpu6050_*` /
+  `MahonyAHRSupdateIMU` 均在 ELF 中。
+- ❌ **未烧板、未接传感器、无任何真机证据。** 接线时注意：**AD0 必须接地**
+  （驱动按 `0x68` 写死，悬空可能变 `0x69`）、**VCC 走 3.3V**（单电源纪律）、
+  驱动是轮询的**不用 INT 脚**。若读不出来先把 `ClockSpeed` 降到 100 kHz——
+  面包板杜邦线寄生电容大，400 kHz 上升沿勉强。
+- **真机验收还缺一个观测手段**：`mpu6050_init()` 的返回值在 `SensorTask` 里被丢弃，
+  且 `protocol.h` 没有 IMU 相关错误位（`ERR_*` 只到 `0x04` 的 ToF）；
+  `encoder_watch.py` 只解 `<4i` 编码器计数，不显示姿态。数据通路本身是通的
+  （`robot_update_imu()` → `CMD_ODOM_FEEDBACK`，帧内 `imu_q` 偏移 23、
+  `imu_gyro` 偏移 39），但需要一个 `imu_watch.py` 才能判断"接好了没"。
+
 ### M5：ROS 2 整车栈闭合 + SLAM 出图（2026-08-28，实测）
 
 - **`ros2_control` 硬件接口已激活并稳定运行。** `MCRSystem` 状态 `active`、四个轮速命令
@@ -456,7 +501,7 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
 ### 已通过 SIL / 单元测试（非真机）
 
 - 共享协议（CRC16-MODBUS、帧同步）、麦克纳姆运动学、Mahony AHRS、遥控映射、PID 数据链。
-- CTest 6/6 通过；`firmware/arm_controller` SIL 24/24 通过。
+- CTest 8/8 通过（2026-08-29 新增 `test_stall`、`test_mpu6050`）；`firmware/arm_controller` SIL 24/24 通过。
 - UART DMA/IDLE 代码路径已实现（staging buffer 与软件 ring 分离），**真机未验证**。
 - UART 模拟器轮速对象模型使用台面供电测得曲线的推导上限 4.27 rev/s，以及由
   5% 不转、10% 时 0.32 rev/s 推导的保守启动阈值；它不是电池供电或带载实测模型。
@@ -474,8 +519,11 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   换电机后须重测四轮一致性基线。
 - `lx = 0.10 m`（半轴距）和 `ly = 0.12 m`（半轮距）仅为默认估计值，均未实测；
   应量前后轮、左右轮的轴中心距后各除以 2，再替换 ROS 2 与模拟器中的默认值。
-- `firmware_arch_main()` **不能在真机跑**：缺 UART/I2C 的 MSP 初始化；`motor.c` 引脚映射目前由各 HW target 在初始化时传入，不是静态表。
-- IMU、ToF、Nav2 尚未上真机。LD06 已接入 `robot.launch.py`（见上文），但仍未与真实里程计、
+- `firmware_arch_main()` **不能在真机跑**：缺 UART 的 MSP 初始化；`motor.c` 引脚映射目前由各 HW target 在初始化时传入，不是静态表。
+  I2C2 的初始化已于 2026-08-29 补上（见上文 I2C2/MPU6050 章节），**但真机未验收**。
+- IMU、ToF、Nav2 尚未上真机。**IMU 驱动与 I2C2 外设初始化已完成并通过单测**
+  （2026-08-29，见上文），仍未烧录、未接传感器。ToF 驱动仍是空壳且被 `HW_IMU_ONLY` 编译掉。
+  LD06 已接入 `robot.launch.py`（见上文），但仍未与真实里程计、
   TF 闭环和 SLAM 形成整车链路；IMX219/YOLO 只完成 Pi 侧独立验证，仓库内仍无 CSI 相机节点。
   NRF24L01 曾完成真机验收，当前车端模块已故障下线，不能写成当前可用。
 - 机械臂：只有 host protocol 与 SIL 骨架，硬件缺货未到（智能总线舵机版），见 [manipulator/docs/decision-log.md](../manipulator/docs/decision-log.md)。
@@ -537,6 +585,9 @@ HSI，使硬编码的 72 MHz 定时器将发包降至约 1 Hz。车端阈值已�
 两个 workflow，推送后**请确认都变绿**（历史上 firmware-tests 红了 9 天没被发现）：
 
 - `firmware-tests.yml` —— gcc 直接编译各单测 + CMake/CTest + 两套 SIL。
+  ⚠️ **CI 并不运行 `ctest`**：它只跑显式列出的 gcc 步骤，CMake 那一步只 build 后跑
+  `./sil_firmware --ci`。**新增主机单测必须同时补一条 gcc 步骤**，否则本地 CTest 绿、
+  CI 却根本没跑它。`test_stall` 曾漏掉，2026-08-29 与 `test_mpu6050` 一并补上。
 - `firmware-tests.yml` 在编译前运行 `tools/check_calibration_constants.sh`：它检查 C、C++、
   Python 三处 `EDGES_PER_WHEEL_REV` 均为 **448**，任一处漂移会使 CI 失败。
 - `ros2-build.yml` —— 在 `ros:jazzy-ros-base` 容器里 colcon build/test，依赖清单与 `docker/Dockerfile` 保持一致（**改一处要同步另一处**）。

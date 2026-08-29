@@ -18,6 +18,12 @@ extern I2C_HandleTypeDef hi2c1;
 #define I2C_MEMADD_SIZE_8BIT  1
 #define HAL_MAX_DELAY         0xFFFFFFFFU
 
+/* The real HAL returns HAL_StatusTypeDef; drivers compare against HAL_OK.
+ * Mirror that here so driver code is identical in both builds — the stubs
+ * return 0 on success, which is what HAL_OK is on the real HAL too. */
+#define HAL_OK    0
+#define HAL_ERROR 1
+
 /* --- API --- */
 int HAL_I2C_Mem_Read(I2C_HandleTypeDef *hi2c, uint16_t dev_addr, uint16_t mem_addr,
                      uint16_t mem_add_size, uint8_t *data, uint16_t size, uint32_t timeout);

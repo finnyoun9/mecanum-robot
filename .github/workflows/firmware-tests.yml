@@ -49,6 +49,16 @@ jobs:
         gcc -std=c11 -Wall -Wextra -I firmware/Core/Inc firmware/Core/Test/test_encoder.c firmware/Core/Src/encoder.c -lm -o /tmp/test_encoder
         /tmp/test_encoder
 
+    - name: Run stall protection tests
+      run: |
+        gcc -std=c11 -Wall -Wextra -I firmware/Core/Inc -I shared firmware/Core/Test/test_stall.c firmware/Core/Src/robot_control.c firmware/Core/Src/pid.c shared/protocol.c -lm -o /tmp/test_stall
+        /tmp/test_stall
+
+    - name: Run MPU6050 driver tests
+      run: |
+        gcc -std=c11 -Wall -Wextra -I firmware/Core/Inc -I firmware/Core/SIL/mocks firmware/Core/Test/test_mpu6050.c firmware/Core/Src/mpu6050.c -lm -o /tmp/test_mpu6050
+        /tmp/test_mpu6050
+
     - name: SIL firmware build + test
       run: |
         mkdir -p firmware/Core/build

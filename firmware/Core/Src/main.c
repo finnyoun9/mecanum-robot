@@ -36,8 +36,10 @@
 /* --- Task handles --- */
 static TaskHandle_t hCtrlTask    = NULL;
 static TaskHandle_t hCommTask    = NULL;
-#ifndef HW_MINIMAL_TASKS
+#ifndef HW_NO_SENSOR_TASK
 static TaskHandle_t hSensorTask  = NULL;
+#endif
+#ifndef HW_MINIMAL_TASKS
 static TaskHandle_t hRemoteTask  = NULL;
 #endif
 static TaskHandle_t hMonitorTask = NULL;
@@ -424,7 +426,9 @@ void SensorTask(void *pvParameters) {
     (void)pvParameters;
 
     static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+#ifndef HW_IMU_ONLY
     static uint8_t tof_divider = 0;
+#endif
     static bool initialized = false;
     const float xImuDt = 0.010f; /* matches this task's 10ms period */
 
@@ -437,7 +441,9 @@ void SensorTask(void *pvParameters) {
         xLastWakeTime = xTaskGetTickCount();
 #endif
         mpu6050_init();
+#ifndef HW_IMU_ONLY
         tof_init();
+#endif
         initialized = true;
     }
 
@@ -455,13 +461,20 @@ void SensorTask(void *pvParameters) {
                              imu_q, xImuDt);
         robot_update_imu(imu_q, gyro_rads);
 
-        /* --- ToF read (20 Hz = every 5th iteration / 50ms) --- */
+        /* --- ToF read (20 Hz = every 5th iteration / 50ms) ---
+         * Compiled out under HW_IMU_ONLY: tof_sensor.c is still a stub whose
+         * every read times out, which would pin ERR_TOF_TIMEOUT in the
+         * odometry error_flags the Pi sees and make a real fault
+         * indistinguishable from the placeholder. Drop the guard once the
+         * VL53L0X is wired and its I2C calls are live. */
+#ifndef HW_IMU_ONLY
         if (++tof_divider >= 5) {
             tof_divider = 0;
             tof_status_t tof_status;
             uint16_t tof_mm = tof_read_mm(&tof_status);
             robot_update_tof(tof_mm, tof_status == TOF_TIMEOUT);
         }
+#endif
 
 #ifndef SIL_BUILD
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(10));
@@ -584,12 +597,16 @@ int firmware_arch_main(void) {
     /* --- Create tasks --- */
     xTaskCreate(CtrlTask,    "Ctrl",   512, NULL, 4, &hCtrlTask);
     xTaskCreate(CommTask,    "Comm",   512, NULL, 3, &hCommTask);
-#ifndef HW_MINIMAL_TASKS
-    /* I2C sensors (MPU6050/VL53L0X) and the NRF24 link are not wired into
-     * the RTOS drive target yet — their tasks are created only in builds
-     * with the full peripheral set. The task functions stay compiled so
-     * the SIL build and future hardware targets are unaffected. */
+#ifndef HW_NO_SENSOR_TASK
+    /* I2C sensors. Under HW_IMU_ONLY this reads the MPU6050 and runs the
+     * Mahony filter; the ToF half stays compiled out until the VL53L0X is
+     * wired (see the ToF block in SensorTask). */
     xTaskCreate(SensorTask,  "Sensor", 256, NULL, 2, &hSensorTask);
+#endif
+#ifndef HW_MINIMAL_TASKS
+    /* The NRF24 link is not wired into the RTOS drive target yet. The task
+     * function stays compiled so the SIL build and future hardware targets
+     * are unaffected. */
     xTaskCreate(RemoteTask,  "Remote", 256, NULL, 2, &hRemoteTask);
 #endif
     xTaskCreate(MonitorTask, "Monitor",128, NULL, 1, &hMonitorTask);

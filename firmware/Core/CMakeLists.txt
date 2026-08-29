@@ -83,9 +83,15 @@ if(BUILD_TESTING)
                    ${CMAKE_CURRENT_SOURCE_DIR}/../../shared/protocol.c)
     target_include_directories(test_stall PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../shared)
+    # MPU6050 against a fake register file. Pulls in the SIL mock's i2c.h so
+    # the driver compiles against the same I2C_HandleTypeDef the SIL build
+    # uses; the test supplies its own HAL_I2C_Mem_* so it can inject NACKs.
+    add_executable(test_mpu6050       Test/test_mpu6050.c       Src/mpu6050.c)
+    target_include_directories(test_mpu6050 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/SIL/mocks)
 
     foreach(host_test test_pid test_mecanum_ik test_ahrs test_remote_control
-                      test_encoder test_stall)
+                      test_encoder test_stall test_mpu6050)
         target_include_directories(${host_test} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Inc)
         # -UNDEBUG keeps assert() live regardless of CMAKE_BUILD_TYPE.
