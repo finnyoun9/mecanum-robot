@@ -69,8 +69,8 @@ Enable the chassis status UI with:
 make TARGET=rtos_drive RTOS=1 TOF=1 OLED=1 flash-stlink
 ```
 
-It rotates overview, wheel-speed and IMU pages, holding each page for five
-seconds. It uses the same SSD1306
+It presents one compact dashboard (ToF, link/state/error, four wheel targets
+and three-axis gyro) and refreshes once per second. It uses the same SSD1306
 page-address and control-byte transport proven in `stm32-smart-home-ota`.
 The module's `0x78` address-select silk screen is its 8-bit write address;
 the firmware correctly uses 7-bit `0x3C`.

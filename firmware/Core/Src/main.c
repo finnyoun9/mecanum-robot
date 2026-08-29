@@ -427,9 +427,9 @@ void CtrlTask(void *pvParameters) {
 #ifdef HW_OLED
 static uint8_t oled_frame[SSD1306_FRAME_BYTES];
 
-/* SensorTask samples ToF every 50 ms. Five seconds is long enough to read a
- * page on the small panel without turning the OLED into a distracting ticker. */
-#define OLED_PAGE_HOLD_TICKS 100U
+/* SensorTask samples ToF every 50 ms. A 1 Hz dashboard refresh is readable
+ * and keeps I2C traffic comfortably below the sensor workload. */
+#define OLED_REFRESH_TICKS 20U
 
 static int16_t oled_scaled_i16(float value, float scale) {
     float scaled = value * scale;
@@ -466,8 +466,7 @@ void SensorTask(void *pvParameters) {
     static uint8_t tof_divider = 0;
 #endif
 #ifdef HW_OLED
-    static uint8_t oled_page = 0;
-    static uint8_t oled_frames_on_page = 0;
+    static uint8_t oled_refresh_ticks = 0;
     static bool oled_ok = false;
 #endif
     static bool initialized = false;
@@ -488,7 +487,7 @@ void SensorTask(void *pvParameters) {
 #ifdef HW_OLED
         oled_ok = ssd1306_init();
         if (oled_ok) {
-            oled_render_state(oled_page);
+            oled_render_state(0U);
             oled_ok = ssd1306_write_frame(oled_frame, sizeof(oled_frame));
         }
 #endif
@@ -523,13 +522,9 @@ void SensorTask(void *pvParameters) {
             robot_update_tof(tof_mm, tof_status == TOF_TIMEOUT);
 #ifdef HW_OLED
             if (oled_ok) {
-                /* One contiguous transfer avoids a visible 400 ms cascade
-                 * of eight page writes. Refreshing only when changing page
-                 * also prevents the status text from overlapping itself. */
-                if (++oled_frames_on_page >= OLED_PAGE_HOLD_TICKS) {
-                    oled_frames_on_page = 0;
-                    oled_page = (uint8_t)((oled_page + 1U) % OLED_UI_PAGE_COUNT);
-                    oled_render_state(oled_page);
+                if (++oled_refresh_ticks >= OLED_REFRESH_TICKS) {
+                    oled_refresh_ticks = 0;
+                    oled_render_state(0U);
                     oled_ok = ssd1306_write_frame(oled_frame, sizeof(oled_frame));
                 }
             }

@@ -15,7 +15,7 @@ static uint32_t checksum(const uint8_t *frame) {
 
 int main(void) {
     uint8_t frame[SSD1306_FRAME_BYTES];
-    uint32_t sums[OLED_UI_PAGE_COUNT];
+    uint32_t initial_sum;
     oled_ui_data_t data = {
         .tof_mm = 771U,
         .error_flags = 0x04U,
@@ -27,15 +27,15 @@ int main(void) {
         .qw_centi = 99,
     };
 
-    for (uint8_t page = 0; page < OLED_UI_PAGE_COUNT; ++page) {
-        memset(frame, 0xFF, sizeof(frame));
-        oled_ui_render(frame, page, &data);
-        sums[page] = checksum(frame);
-        assert(sums[page] != 0U);
-        assert(memchr(frame, 0x00, sizeof(frame)) != NULL);
-    }
-    assert(sums[0] != sums[1]);
-    assert(sums[1] != sums[2]);
+    memset(frame, 0xFF, sizeof(frame));
+    oled_ui_render(frame, 0U, &data);
+    initial_sum = checksum(frame);
+    assert(initial_sum != 0U);
+    assert(memchr(frame, 0x00, sizeof(frame)) != NULL);
+
+    data.tof_mm = 1234U;
+    oled_ui_render(frame, 0U, &data);
+    assert(checksum(frame) != initial_sum);
 
     oled_ui_render(NULL, 0U, &data);
     oled_ui_render(frame, 0U, NULL);
