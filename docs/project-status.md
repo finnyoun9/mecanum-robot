@@ -95,6 +95,11 @@ Flash 写入和 `remote_pid_drive` 启动已验证。旧板故障的完整实测
   `MISO` 上拉为 `1`，快速和约 100 kHz 慢速 `STATUS` 均为正常复位值 `0x0E`。这同时验证
   3.3 V 供电、模块方向、`CE/CSN/SCK/MISO/MOSI` 接线和 STM32 位翻转 SPI；旧模块应继续
   下线。正式 `rtos_drive` 已恢复，但尚待手柄开机后的 Auto-ACK/收包验收。
+- **手柄固件已定向重刷（2026-08-29，实测）。** 两只 ST-Link 同时接入时，按序列号
+  `37FF71064E57343602361C43`（手柄、V2J27S6）写入
+  `firmware/remote_controller/remote-control.bin`，41,184 B，写入校验通过；车端
+  `37FF71064E57343623CE1E43` 未被本次操作触及。该结果仅证明烧录完成，仍待手柄 OLED
+  启动和与车端的 Auto-ACK/收包验收。
 - **历史阻断（已由 2026-08-29 GDB 复测解除）：慢速 SPI 读数曾未取到。** 探针跑到后段时 PC13 观察到持续慢闪，
   与预期的阶段化闪烁不符，怀疑卡在某阶段或存在探针自身逻辑缺陷；本机 `st-info` 缺失、
   `arm-none-eabi-gdb` 不可用（`exit 127`），OpenOCD `mdw` 亦未回读到 stdout，
