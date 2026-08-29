@@ -10,6 +10,7 @@
 static I2C_HandleTypeDef fake_bus;
 static bool nack_all;
 static bool data_ready;
+static bool corrupt_range_burst;
 static uint8_t nvm_selector;
 static uint8_t result_block[12];
 static uint32_t fake_ticks;
@@ -37,8 +38,21 @@ int HAL_I2C_Mem_Read(I2C_HandleTypeDef *hi2c, uint16_t dev_addr,
         data[0] = data_ready ? 0x07 : 0x00;
         return HAL_OK;
     }
+    if (mem_addr == 0x14 && size == 1) {
+        data[0] = result_block[0];
+        return HAL_OK;
+    }
     if (mem_addr == 0x14 && size == sizeof(result_block)) {
         memcpy(data, result_block, size);
+        if (corrupt_range_burst) data[11] = data[10];
+        return HAL_OK;
+    }
+    if (mem_addr == 0x1E && size == 1) {
+        data[0] = result_block[10];
+        return HAL_OK;
+    }
+    if (mem_addr == 0x1F && size == 1) {
+        data[0] = result_block[11];
         return HAL_OK;
     }
     if ((size_t)mem_addr + size > sizeof(hi2c->mem)) return HAL_ERROR;
@@ -65,6 +79,7 @@ static void setup_healthy(void) {
     memset(result_block, 0, sizeof(result_block));
     nack_all = false;
     data_ready = true; /* reference calibrations finish immediately */
+    corrupt_range_burst = false;
     nvm_selector = 0;
     fake_ticks = 0;
     last_dev_addr = 0;
@@ -119,6 +134,14 @@ static void test_valid_range_and_error_hold_last_good(void) {
     stage_range(11, 345);
     assert(tof_read_mm(&status) == 345);
     assert(status == TOF_OK);
+
+    /* STM32F1 I2C2 + this breakout can duplicate the burst's first range
+     * byte. Single-byte range reads must still return the true 0x0159. */
+    corrupt_range_burst = true;
+    stage_range(11, 345);
+    assert(tof_read_mm(&status) == 345);
+    assert(status == TOF_OK);
+    corrupt_range_burst = false;
 
     stage_range(4, 999); /* signal failure is not a usable distance */
     assert(tof_read_mm(&status) == 345);

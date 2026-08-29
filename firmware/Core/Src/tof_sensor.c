@@ -267,7 +267,9 @@ static uint16_t timeout_result(tof_status_t *status) {
 
 uint16_t tof_read_mm(tof_status_t *status) {
     uint8_t ready = 0;
-    uint8_t result[12];
+    uint8_t range_status = 0;
+    uint8_t range_msb = 0;
+    uint8_t range_lsb = 0;
     uint8_t device_status;
     uint16_t mm;
 
@@ -275,14 +277,20 @@ uint16_t tof_read_mm(tof_status_t *status) {
         !reg_read(REG_RESULT_INTERRUPT_STATUS, &ready, 1) ||
         (ready & 0x07U) == 0U) return timeout_result(status);
 
-    if (!reg_read(REG_RESULT_RANGE_STATUS, result, sizeof(result)) ||
+    /* The YB-MVV18/VL53L0X breakout returns a corrupted low byte when this
+     * window is fetched as one 12-byte I2C transaction on STM32F1 I2C2.
+     * Read the status and two range bytes separately: 20 Hz adds negligible
+     * bus time and preserves the actual 16-bit millimetre result. */
+    if (!reg_read(REG_RESULT_RANGE_STATUS, &range_status, 1) ||
+        !reg_read((uint8_t)(REG_RESULT_RANGE_STATUS + 10U), &range_msb, 1) ||
+        !reg_read((uint8_t)(REG_RESULT_RANGE_STATUS + 11U), &range_lsb, 1) ||
         !reg_write(REG_SYSTEM_INTERRUPT_CLEAR, 0x01)) {
         return timeout_result(status);
     }
 
     consecutive_timeouts = 0;
-    device_status = (uint8_t)((result[0] & 0x78U) >> 3);
-    mm = (uint16_t)(((uint16_t)result[10] << 8) | result[11]);
+    device_status = (uint8_t)((range_status & 0x78U) >> 3);
+    mm = (uint16_t)(((uint16_t)range_msb << 8) | range_lsb);
     /* The module's specified near limit is 15 mm.  A zero result is never a
      * physical range; accepting it would make an invalid sample look like a
      * real obstacle at the sensor face. */
