@@ -142,8 +142,8 @@ static void test_three_missed_samples_report_timeout(void) {
     assert(tof_read_mm(&status) == 200 && status == TOF_OK);
 
     data_ready = false;
-    assert(tof_read_mm(&status) == 200 && status == TOF_OK);
-    assert(tof_read_mm(&status) == 200 && status == TOF_OK);
+    assert(tof_read_mm(&status) == 200 && status == TOF_NO_SAMPLE);
+    assert(tof_read_mm(&status) == 200 && status == TOF_NO_SAMPLE);
     assert(tof_read_mm(&status) == 200 && status == TOF_TIMEOUT);
     printf("PASS test_three_missed_samples_report_timeout\n");
 }

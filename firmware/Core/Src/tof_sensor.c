@@ -260,7 +260,7 @@ static uint16_t timeout_result(tof_status_t *status) {
     if (consecutive_timeouts < UINT8_MAX) ++consecutive_timeouts;
     if (status != NULL) {
         *status = consecutive_timeouts >= TOF_TIMEOUT_ERR_THRESHOLD
-                      ? TOF_TIMEOUT : TOF_OK;
+                      ? TOF_TIMEOUT : TOF_NO_SAMPLE;
     }
     return last_valid_mm;
 }

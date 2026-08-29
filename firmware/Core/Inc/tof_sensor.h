@@ -14,6 +14,7 @@
 typedef enum {
     TOF_OK = 0,
     TOF_OUT_OF_RANGE,
+    TOF_NO_SAMPLE,
     TOF_TIMEOUT,
 } tof_status_t;
 
@@ -30,8 +31,8 @@ uint8_t tof_init_stage(void);
 
 /**
  * Read the latest continuous-ranging result without blocking for a new sample.
- * A missing sample becomes TOF_TIMEOUT after three consecutive 20 Hz polls.
- * Errors retain and return the last known-good distance.
+ * A missing sample is TOF_NO_SAMPLE and becomes TOF_TIMEOUT after three
+ * consecutive 20 Hz polls. Errors retain and return the last known-good range.
  */
 uint16_t tof_read_mm(tof_status_t *status);
 
