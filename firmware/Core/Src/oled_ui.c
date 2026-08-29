@@ -43,9 +43,9 @@ static const uint8_t *glyph(char c) {
     return blank;
 }
 
-/* 1.5x 5x7 glyphs: 8x11 pixels with a 16-pixel line pitch. This preserves
- * readability on a 0.96 inch panel while fitting the chassis essentials in
- * four 16-character lines. */
+/* Native 5x7 glyphs: a one-pixel stroke and 6x12 character grid.  The former
+ * stretched font made compact status text look bold and crowded on 0.96 inch
+ * panels; this keeps all diagnostics readable in one static page. */
 static void pixel(uint8_t *frame, uint8_t x, uint8_t y) {
     if (x < SSD1306_WIDTH && y < SSD1306_HEIGHT) {
         frame[(uint16_t)(y / 8U) * SSD1306_WIDTH + x] |= (uint8_t)(1U << (y % 8U));
@@ -53,32 +53,21 @@ static void pixel(uint8_t *frame, uint8_t x, uint8_t y) {
 }
 
 static void text(uint8_t *frame, uint8_t row, uint8_t col, const char *s) {
-    static const uint8_t stretch[5] = {2U, 1U, 2U, 1U, 2U};
-    static const uint8_t y_offset[7] = {0U, 2U, 3U, 5U, 6U, 8U, 9U};
-    uint8_t x = (uint8_t)(col * 8U);
-    uint8_t y = (uint8_t)(row * 16U);
+    uint8_t x = (uint8_t)(col * 6U);
+    uint8_t y = (uint8_t)(row * 12U);
     if (row >= 4U || s == NULL) return;
 
-    while (*s != '\0' && x + 7U < SSD1306_WIDTH) {
+    while (*s != '\0' && x + 5U < SSD1306_WIDTH) {
         const uint8_t *g = glyph(*s++);
-        uint8_t glyph_x_out = 0U;
         for (uint8_t glyph_x = 0; glyph_x < 5U; ++glyph_x) {
             for (uint8_t glyph_y = 0; glyph_y < 7U; ++glyph_y) {
                 if ((g[glyph_x] & (uint8_t)(1U << glyph_y)) != 0U) {
-                    uint8_t glyph_y_out = y_offset[glyph_y];
-                    for (uint8_t dx = 0; dx < stretch[glyph_x]; ++dx) {
-                        pixel(frame, (uint8_t)(x + glyph_x_out + dx),
-                              (uint8_t)(y + glyph_y_out));
-                        if ((glyph_y & 1U) == 0U) {
-                            pixel(frame, (uint8_t)(x + glyph_x_out + dx),
-                                  (uint8_t)(y + glyph_y_out + 1U));
-                        }
-                    }
+                    pixel(frame, (uint8_t)(x + glyph_x),
+                          (uint8_t)(y + glyph_y));
                 }
             }
-            glyph_x_out = (uint8_t)(glyph_x_out + stretch[glyph_x]);
         }
-        x = (uint8_t)(x + 8U);
+        x = (uint8_t)(x + 6U);
     }
 }
 
