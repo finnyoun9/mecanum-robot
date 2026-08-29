@@ -125,7 +125,7 @@ mecanum-robot/
 | 电机驱动 Driver | TB6612FNG 双路 H 桥 | 2 |
 | 激光雷达 LiDAR | LD06 360° + CH340 USB-TTL | 1 |
 | IMU | MPU6050 | 1 |
-| ToF 测距 | VL53L0X / VL53L1X | 1 |
+| ToF 测距 | VL53L0X（当前驱动不兼容 VL53L1X） | 1 |
 | 相机 Camera | IMX219 8MP (CSI 排线) | 1 |
 | 无线遥控 Remote | NRF24L01+ 收发模块 + 江协科技手柄 | 2 |
 | 电源 Power | 3S 锂电池 + 降压模块 | 1 套 |

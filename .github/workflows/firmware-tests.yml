@@ -19,6 +19,9 @@ jobs:
     - name: Run STM32 UART sim wheel-model tests
       run: python3 tools/test_stm32_uart_sim.py
 
+    - name: Run sensor watcher parser tests
+      run: python3 -m unittest discover -s tools -p 'test_*watch.py'
+
     - name: Run protocol tests
       run: |
         gcc -std=c11 -I shared shared/tests/test_protocol.c shared/protocol.c -o /tmp/test_protocol
@@ -58,6 +61,16 @@ jobs:
       run: |
         gcc -std=c11 -Wall -Wextra -I firmware/Core/Inc -I firmware/Core/SIL/mocks firmware/Core/Test/test_mpu6050.c firmware/Core/Src/mpu6050.c -lm -o /tmp/test_mpu6050
         /tmp/test_mpu6050
+
+    - name: Run VL53L0X driver tests
+      run: |
+        gcc -std=c11 -Wall -Wextra -Werror -I firmware/Core/Inc -I firmware/Core/SIL/mocks firmware/Core/Test/test_tof_sensor.c firmware/Core/Src/tof_sensor.c -o /tmp/test_tof_sensor
+        /tmp/test_tof_sensor
+
+    - name: Run SSD1306 driver tests
+      run: |
+        gcc -std=c11 -Wall -Wextra -Werror -I firmware/Core/Inc -I firmware/Core/SIL/mocks firmware/Core/Test/test_ssd1306.c firmware/Core/Src/ssd1306.c -o /tmp/test_ssd1306
+        /tmp/test_ssd1306
 
     - name: SIL firmware build + test
       run: |

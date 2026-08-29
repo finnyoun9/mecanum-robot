@@ -2,7 +2,7 @@ import struct
 import unittest
 
 from imu_watch import OdomParser, quaternion_to_euler
-from link_check import encode_frame
+from link_check import Parser, encode_frame
 
 
 class ImuWatchTest(unittest.TestCase):
@@ -42,6 +42,13 @@ class ImuWatchTest(unittest.TestCase):
     def test_identity_quaternion_is_zero_euler(self):
         self.assertEqual(quaternion_to_euler((1.0, 0.0, 0.0, 0.0)),
                          (0.0, 0.0, 0.0))
+
+    def test_link_parser_exposes_tof_and_error_fields(self):
+        parser = Parser()
+        for byte in encode_frame(0x20, self.payload, 7):
+            parser.push(byte)
+        self.assertEqual(parser.last_tof_mm, 123)
+        self.assertEqual(parser.last_error_flags, 0x04)
 
 
 if __name__ == "__main__":

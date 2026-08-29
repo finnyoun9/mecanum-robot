@@ -27,10 +27,12 @@ the macOS ARM GNU Toolchain. The sizes are `text + data + bss` bytes.
 | `rr_encoder_probe` | RR passive raw A/B continuity diagnostic | hardware pass: 10 turns -> A/B 4,516 each; 3,016 + 12 + 1,548 = 4,576 |
 | `rr_motor_encoder_probe` | RR-only 1.5 s full-duty raw A/B diagnostic | hardware pass: A/B 3,384/3,383, decoded +3,384; 4,484 + 16 + 1,728 = 6,228 |
 | `uart_link_probe` | Pi ↔ STM32 USART1 protocol transport only | build pass, 4,816 + 12 + 1,716 = 6,544; hardware pending |
+| `i2c_bus_probe` | no-motor MPU6050/VL53L0X scan + SSD1306 all-pixels test | hardware pass |
 | `rtos_drive` | FreeRTOS drive + UART DMA + MPU6050 on I2C2 | build + flash + IMU hardware pass, 25,204 + 360 + 14,040 = 39,604 |
+| `rtos_drive TOF=1` | adds VL53L0X continuous ranging on shared I2C2 | hardware pass, 26,956 + 360 + 14,056 = 41,372 |
 
-The host regression passes with CTest: 8/8 (`sil_firmware_ci`, PID,
-mecanum IK, AHRS, remote-control, encoder, stall and MPU6050 tests).
+The host regression passes with CTest: 10/10 (`sil_firmware_ci`, PID,
+mecanum IK, AHRS, remote-control, encoder, stall, MPU6050, VL53L0X and SSD1306).
 
 The MPU6050 hardware path was closed on 2026-08-29. Build and flash with the
 ST-Link path verified on this chassis (the probe's old `0x1ba01477` SWD IDCODE
@@ -46,6 +48,19 @@ The accepted run received 754 ODOM samples at about 50 Hz with zero CRC
 failures, unit quaternions, non-zero gyro data and `error_flags=0`. The observed
 stationary Y-axis gyro bias was about +0.045 rad/s; bias calibration remains the
 next IMU accuracy task.
+
+With VL53L0X wired to PB10/PB11 alongside the MPU6050, enable and validate it:
+
+```sh
+make TARGET=rtos_drive RTOS=1 TOF=1 flash-stlink
+python3 tools/tof_watch.py --duration 15
+```
+
+The accepted hardware run received 754 ODOM frames in 15 seconds with zero CRC
+failures, a valid 771 mm range and `error_flags=0`. The SSD1306 at `0x3c` also
+passed address detection, initialization, clear and all-pixels-on testing on the
+same bus. `i2c_bus_probe` is the no-motor diagnostic target for repeating these
+checks.
 
 Hardware verification completed during the same bring-up sequence:
 

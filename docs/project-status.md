@@ -311,9 +311,9 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   WHO_AM_I 不匹配即返回 false 且**在碰配置寄存器之前退出**。
 - **读失败返回零向量**而非脏数据：Mahony 有零模保护分支，掉帧退化为纯陀螺积分，
   不会把姿态拽向一个假的重力方向。
-- **`SensorTask` 接入真机 target**，新增 `HW_IMU_ONLY` 只启用 IMU；ToF 半边编译掉，
-  因为 `tof_sensor.c` 仍是空壳、每次读必然超时，会把 `ERR_TOF_TIMEOUT` 永久钉在
-  Pi 看到的 `error_flags` 里，**使真故障与占位符无法区分**。
+- **`SensorTask` 接入真机 target**，当时新增 `HW_IMU_ONLY` 只启用 IMU；ToF 半边先编译掉，
+  避免占位驱动把 `ERR_TOF_TIMEOUT` 永久钉在 Pi 看到的 `error_flags` 里。2026-08-29
+  VL53L0X 驱动完成后该开关改为构建参数：模块未装保持默认，装好后用 `TOF=1` 启用。
 - **顺带修掉一个潜伏的链接顺序 bug**：`-lc -lm` 原在 `LDFLAGS` 里、位于目标文件
   **之前**，而 ld 从左到右解析，库先被扫过时还没有未定义符号、之后不再回头。
   表现为 `sqrtf` 找不到 `__errno`。**该 bug 一直存在但被 `--gc-sections` 掩盖**
@@ -339,6 +339,32 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   90° 转动和静置漂移量化；当前结果只证明数据链，不代表姿态精度已验收。
 - 接线约束仍是：**AD0 必须接地**（驱动按 `0x68` 写死）、**VCC 走 3.3V**，轮询驱动
   不用 INT 脚。当前 400 kHz 已在实物杜邦线下稳定通过，无需降到 100 kHz。
+
+### VL53L0X + SSD1306 驱动模块（2026-08-29，真机闭环通过）
+
+- **VL53L0X 不再是占位实现**：I2C 句柄注入后校验 0xEE model ID，从 NVM 读取 reference
+  SPAD 数量/类型并读取 factory SPAD map，加载 STSW-IMG005 v36 默认 tuning table，执行 VHV/phase reference calibration，
+  再进入 back-to-back continuous ranging。没有把完整 ST PAL 搬入 F103，只保留避障所需路径。
+- `tof_read_mm()` 是非阻塞轮询：SensorTask 20 Hz 读取最新结果，三次连续未 ready/NACK
+  才报告 `TOF_TIMEOUT`；raw range status 仅接受 ST 定义的 11（valid），越界或错误保持
+  last-known-good，避免用假 0 触发/解除避障逻辑。每次 I2C 事务 5 ms、初始化校准 50 ms
+  有界超时，未接模块不会永久卡住任务。
+- I2C2 在 `rtos_drive_main.c` 同时注入 MPU6050 与 VL53L0X。默认仍编译
+  `HW_IMU_ONLY`；接线后使用 `make TARGET=rtos_drive RTOS=1 TOF=1 flash-stlink`。
+- 新增 `tools/tof_watch.py`：只发 heartbeat、不发速度命令，显示 ODOM 中的 mm 和
+  `error_flags`；无帧、CRC 错、`TOF_TIMEOUT` 或全程零距离均失败。
+- **SSD1306 车端轻量模块**：支持 128×64、地址 0x3C 的 init/clear/full-frame/
+  display enable/contrast，所有写入有 5 ms 超时。驱动不内置字体或 1 KiB framebuffer，
+  因而仅启用模块不会吃掉 F103 5% SRAM；调用者需要整帧显示时自行提供 1024 B buffer。
+  手柄端原有江协 OLED 驱动保持不动，已重新交叉编译通过。
+- **验证**：CTest **10/10**；VL53L0X 4 组 host 测试覆盖连续测距配置、错误身份/NACK/
+  NULL bus、有效/越界结果和三次缺帧超时；SSD1306 3 组测试覆盖初始化清屏、整帧大小和
+  bus failure。`TOF=1` 真机 target 在 `-Wall -Werror` 下为 **text 26956 / data 360 /
+  bss 14056 B**，相对 IMU-only 增加约 1.8 KiB flash、16 B RAM。
+- ✅ **真机闭环通过**：亚博 YB-MVV18 VL53L0X 在 `0x29` 完成型号校验、SPAD/VHV/phase
+  校准和连续测距；修正 factory SPAD 读取后得到 raw status 11 与 771 mm。正式 FreeRTOS
+  固件 15 秒收到 754 帧、0 CRC、非零距离、`error_flags=0`。SSD1306 `0x3C` 完成地址
+  探测、初始化和全屏点亮。两者与 MPU6050 共用 PB10/PB11。VL53L1X、SH1106 不兼容。
 
 ### M5：ROS 2 整车栈闭合 + SLAM 出图（2026-08-28，实测）
 
@@ -507,7 +533,7 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
 ### 已通过 SIL / 单元测试（非真机）
 
 - 共享协议（CRC16-MODBUS、帧同步）、麦克纳姆运动学、Mahony AHRS、遥控映射、PID 数据链。
-- CTest 8/8 通过（2026-08-29 新增 `test_stall`、`test_mpu6050`）；`firmware/arm_controller` SIL 24/24 通过。
+- CTest 10/10 通过（含 `test_stall`、`test_mpu6050`、`test_tof_sensor`、`test_ssd1306`）；`firmware/arm_controller` SIL 24/24 通过。
 - UART DMA/IDLE 代码路径已实现（staging buffer 与软件 ring 分离），**真机未验证**。
 - UART 模拟器轮速对象模型使用台面供电测得曲线的推导上限 4.27 rev/s，以及由
   5% 不转、10% 时 0.32 rev/s 推导的保守启动阈值；它不是电池供电或带载实测模型。
@@ -529,7 +555,8 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   `rtos_drive` target 已在进入它之前完成 UART DMA 和 I2C2 MSP 初始化；I2C2/MPU6050
   已于 2026-08-29 真机验收（见上文）。
 - **IMU 已上真机并闭合到 Pi ODOM 帧**，但 gyro 零偏校准和动态姿态精度仍未验收。
-  ToF、Nav2 尚未上真机；ToF 驱动仍是空壳且被 `HW_IMU_ONLY` 编译掉。
+  ToF、Nav2 尚未上真机；ToF 驱动已完成并通过 host/交叉编译验证，接线后需用 `TOF=1`
+  target 烧录验收。
   LD06 已接入 `robot.launch.py`（见上文），但仍未与真实里程计、
   TF 闭环和 SLAM 形成整车链路；IMX219/YOLO 只完成 Pi 侧独立验证，仓库内仍无 CSI 相机节点。
   NRF24L01 曾完成真机验收，当前车端模块已故障下线，不能写成当前可用。

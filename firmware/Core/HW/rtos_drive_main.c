@@ -28,6 +28,7 @@
 #include "motor.h"
 #include "encoder.h"
 #include "mpu6050.h"
+#include "tof_sensor.h"
 
 #include <stddef.h>
 
@@ -347,6 +348,7 @@ static void i2c_sensor_init(void) {
     /* Hand the bus to the driver rather than having it reference a global
      * by name — see mpu6050_set_i2c()'s contract. */
     mpu6050_set_i2c(&hi2c2);
+    tof_sensor_set_i2c(&hi2c2);
 }
 
 /* ======================================================================== */

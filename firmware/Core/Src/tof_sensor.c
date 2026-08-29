@@ -1,102 +1,293 @@
 /**
  * @file tof_sensor.c
- * @brief VL53L0X ToF driver via STM32 HAL I2C.
+ * @brief VL53L0X continuous-ranging driver via STM32 HAL I2C.
  *
- * I2C bus/pin assignment isn't final (hardware in transit), so the actual
- * HAL transaction calls are commented-out TODO placeholders, same pattern
- * as motor.c/encoder.c. Init/read/status logic is complete.
+ * Compact implementation of the mandatory VL53L0X bring-up flow: read the
+ * factory reference-SPAD data from NVM, load ST's default tuning settings, run
+ * VHV/phase reference calibration, then start back-to-back ranging. It only
+ * implements the obstacle-ranging profile the robot uses instead of pulling
+ * the much larger generic ST PAL into a 20 KiB RAM STM32F103 target.
+ *
+ * All bus accesses and readiness polls are bounded. A missing sensor cannot
+ * block SensorTask forever, and errors never fabricate a zero distance.
  */
 
 #include "tof_sensor.h"
+
 #include <stddef.h>
 
-/* --- Replace with actual HAL includes in real project --- */
-/* #include "i2c.h" */
+#ifdef STM32F103xB
+#include "stm32f1xx_hal.h"
+#else
+#include "i2c.h"
+#endif
 
-/* --- I2C address (default, before any address-change command) --- */
-#define TOF_I2C_ADDR 0x29
+#define TOF_HAL_ADDR                    ((uint16_t)(TOF_I2C_ADDR << 1))
+#define TOF_I2C_TIMEOUT_MS              5U
+#define TOF_READY_TIMEOUT_MS            50U
+#define TOF_TIMEOUT_ERR_THRESHOLD       3U
 
-/* --- Register map (subset used by this driver, per VL53L0X datasheet/API) --- */
-#define TOF_REG_MODEL_ID            0xC0
-#define TOF_MODEL_ID_VAL            0xEE
-#define TOF_REG_SYSRANGE_START      0x00
-#define TOF_REG_RESULT_RANGE_STATUS 0x14
-#define TOF_REG_RESULT_RANGE_MM     0x1E /* RESULT_RANGE_STATUS + 10, per ST API */
+#define REG_SYSRANGE_START              0x00U
+#define REG_SYSTEM_SEQUENCE_CONFIG      0x01U
+#define REG_SYSTEM_INTERRUPT_CONFIG     0x0AU
+#define REG_SYSTEM_INTERRUPT_CLEAR      0x0BU
+#define REG_RESULT_INTERRUPT_STATUS     0x13U
+#define REG_RESULT_RANGE_STATUS         0x14U
+#define REG_GPIO_HV_MUX_ACTIVE_HIGH     0x84U
+#define REG_VHV_CONFIG_PAD_SCL_SDA      0x89U
+#define REG_STOP_VARIABLE               0x91U
+#define REG_IDENTIFICATION_MODEL_ID     0xC0U
+#define REG_GLOBAL_CONFIG_SPAD_REF_0     0xB0U
 
-#define TOF_RANGE_STATUS_MASK  0x78 /* bits [6:3]: range status code */
-#define TOF_RANGE_STATUS_VALID 0x00 /* status code 0 = valid range ("no error") */
+#define MODEL_ID_EXPECTED               0xEEU
+#define RANGE_STATUS_VALID              11U
+#define MAX_VALID_MM                    2000U
 
-#define TOF_MAX_TIMEOUT_MS 50   /* datasheet: worst-case ranging cycle ~30-40ms */
-#define TOF_MAX_VALID_MM   2000 /* VL53L0X practical max range */
+extern uint32_t hal_get_tick_ms(void);
 
-#define TOF_TIMEOUT_ERR_THRESHOLD 3 /* consecutive misses before reporting TOF_TIMEOUT */
+static I2C_HandleTypeDef *bus = NULL;
+static uint8_t stop_variable = 0;
+static uint16_t last_valid_mm = 0;
+static uint8_t consecutive_timeouts = 0;
+static bool initialized = false;
+static uint8_t init_stage = 0U;
 
-static uint16_t last_valid_mm       = 0;
-static uint8_t  consecutive_timeouts = 0;
+uint8_t tof_init_stage(void) { return init_stage; }
 
-bool tof_init(void) {
-    uint8_t model_id = 0;
-    /* HAL_I2C_Mem_Read(&hi2c1, TOF_I2C_ADDR << 1, TOF_REG_MODEL_ID,
-                         I2C_MEMADD_SIZE_8BIT, &model_id, 1, HAL_MAX_DELAY); */
-    (void)model_id;
+/* STSW-IMG005 DefaultTuningSettings v36, represented as register/value pairs.
+ * The original table encodes every entry as {write_count=1, register, value};
+ * this equivalent form avoids carrying the generic table interpreter. */
+static const uint8_t default_tuning[][2] = {
+    {0xFF, 0x01}, {0x00, 0x00},
+    {0xFF, 0x00}, {0x09, 0x00}, {0x10, 0x00}, {0x11, 0x00},
+    {0x24, 0x01}, {0x25, 0xFF}, {0x75, 0x00},
+    {0xFF, 0x01}, {0x4E, 0x2C}, {0x48, 0x00}, {0x30, 0x20},
+    {0xFF, 0x00}, {0x30, 0x09}, {0x54, 0x00}, {0x31, 0x04},
+    {0x32, 0x03}, {0x40, 0x83}, {0x46, 0x25}, {0x60, 0x00},
+    {0x27, 0x00}, {0x50, 0x06}, {0x51, 0x00}, {0x52, 0x96},
+    {0x56, 0x08}, {0x57, 0x30}, {0x61, 0x00}, {0x62, 0x00},
+    {0x64, 0x00}, {0x65, 0x00}, {0x66, 0xA0},
+    {0xFF, 0x01}, {0x22, 0x32}, {0x47, 0x14}, {0x49, 0xFF},
+    {0x4A, 0x00},
+    {0xFF, 0x00}, {0x7A, 0x0A}, {0x7B, 0x00}, {0x78, 0x21},
+    {0xFF, 0x01}, {0x23, 0x34}, {0x42, 0x00}, {0x44, 0xFF},
+    {0x45, 0x26}, {0x46, 0x05}, {0x40, 0x40}, {0x0E, 0x06},
+    {0x20, 0x1A}, {0x43, 0x40},
+    {0xFF, 0x00}, {0x34, 0x03}, {0x35, 0x44},
+    {0xFF, 0x01}, {0x31, 0x04}, {0x4B, 0x09}, {0x4C, 0x05},
+    {0x4D, 0x04},
+    {0xFF, 0x00}, {0x44, 0x00}, {0x45, 0x20}, {0x47, 0x08},
+    {0x48, 0x28}, {0x67, 0x00}, {0x70, 0x04}, {0x71, 0x01},
+    {0x72, 0xFE}, {0x76, 0x00}, {0x77, 0x00},
+    {0xFF, 0x01}, {0x0D, 0x01},
+    {0xFF, 0x00}, {0x80, 0x01}, {0x01, 0xF8},
+    {0xFF, 0x01}, {0x8E, 0x01}, {0x00, 0x01},
+    {0xFF, 0x00}, {0x80, 0x00},
+};
 
-    if (model_id != TOF_MODEL_ID_VAL) {
-        /* return false; -- uncomment once I2C bus is wired; placeholder
-         * always proceeds so the rest of the driver stays testable */
+void tof_sensor_set_i2c(void *hi2c) {
+    bus = (I2C_HandleTypeDef *)hi2c;
+    initialized = false;
+    init_stage = 0U;
+}
+
+static bool reg_write(uint8_t reg, uint8_t value) {
+    if (bus == NULL) return false;
+    return HAL_I2C_Mem_Write(bus, TOF_HAL_ADDR, reg, I2C_MEMADD_SIZE_8BIT,
+                             &value, 1, TOF_I2C_TIMEOUT_MS) == HAL_OK;
+}
+
+static bool reg_read(uint8_t reg, uint8_t *data, uint16_t len) {
+    if (bus == NULL || data == NULL) return false;
+    return HAL_I2C_Mem_Read(bus, TOF_HAL_ADDR, reg, I2C_MEMADD_SIZE_8BIT,
+                            data, len, TOF_I2C_TIMEOUT_MS) == HAL_OK;
+}
+
+static bool device_read_strobe(void) {
+    uint8_t strobe = 0;
+    uint32_t start;
+
+    if (!reg_write(0x83, 0x00)) return false;
+    start = hal_get_tick_ms();
+    do {
+        if (!reg_read(0x83, &strobe, 1)) return false;
+        if (strobe != 0) return reg_write(0x83, 0x01);
+    } while ((hal_get_tick_ms() - start) < TOF_READY_TIMEOUT_MS);
+    return false;
+}
+
+static bool read_reference_spads(uint8_t good_map[6], uint8_t *count,
+                                 bool *aperture) {
+    uint8_t temp = 0;
+    bool ok;
+
+    ok = reg_write(0x80, 0x01) && reg_write(0xFF, 0x01) &&
+         reg_write(0x00, 0x00) && reg_write(0xFF, 0x06) &&
+         reg_read(0x83, &temp, 1) && reg_write(0x83, (uint8_t)(temp | 0x04)) &&
+         reg_write(0xFF, 0x07) && reg_write(0x81, 0x01) &&
+         reg_write(0x80, 0x01) && reg_write(0x94, 0x6B) &&
+         device_read_strobe() && reg_read(0x92, &temp, 1);
+
+    if (ok) {
+        *count = (uint8_t)(temp & 0x7FU);
+        *aperture = (temp & 0x80U) != 0U;
     }
 
-    consecutive_timeouts = 0;
-    last_valid_mm = 0;
+    /* Always restore the normal page, even after a failed NVM access. */
+    ok = reg_write(0x81, 0x00) && ok;
+    ok = reg_write(0xFF, 0x06) && ok;
+    if (reg_read(0x83, &temp, 1)) {
+        ok = reg_write(0x83, (uint8_t)(temp & 0xFBU)) && ok;
+    } else {
+        ok = false;
+    }
+    ok = reg_write(0xFF, 0x01) && ok;
+    ok = reg_write(0x00, 0x01) && ok;
+    ok = reg_write(0xFF, 0x00) && ok;
+    ok = reg_write(0x80, 0x00) && ok;
+    if (!ok) return false;
+
+    return *count > 0 && *count <= 48 &&
+           reg_read(REG_GLOBAL_CONFIG_SPAD_REF_0, good_map, 6U);
+}
+
+static bool configure_reference_spads(void) {
+    uint8_t good_map[6];
+    uint8_t enabled_map[6] = {0};
+    uint8_t requested = 0;
+    uint8_t enabled = 0;
+    bool aperture = false;
+    uint8_t first;
+
+    if (!read_reference_spads(good_map, &requested, &aperture)) return false;
+    first = aperture ? 12U : 0U;
+    for (uint8_t i = 0; i < 48U && enabled < requested; ++i) {
+        if (i < first) continue;
+        if ((good_map[i / 8U] & (uint8_t)(1U << (i % 8U))) != 0U) {
+            enabled_map[i / 8U] |= (uint8_t)(1U << (i % 8U));
+            ++enabled;
+        }
+    }
+    if (enabled != requested) return false;
+
+    if (!reg_write(0xFF, 0x01) || !reg_write(0x4F, 0x00) ||
+        !reg_write(0x4E, 0x2C) || !reg_write(0xFF, 0x00) ||
+        !reg_write(0xB6, 0xB4)) return false;
+    if (bus == NULL) return false;
+    return HAL_I2C_Mem_Write(bus, TOF_HAL_ADDR, REG_GLOBAL_CONFIG_SPAD_REF_0,
+                             I2C_MEMADD_SIZE_8BIT, enabled_map,
+                             sizeof(enabled_map), TOF_I2C_TIMEOUT_MS) == HAL_OK;
+}
+
+static bool load_default_tuning(void) {
+    for (size_t i = 0; i < sizeof(default_tuning) / sizeof(default_tuning[0]); ++i) {
+        if (!reg_write(default_tuning[i][0], default_tuning[i][1])) return false;
+    }
     return true;
 }
 
-/** Poll RESULT_RANGE_STATUS data-ready bit (bit 0) until set or timed out. */
-static bool tof_wait_for_data(void) {
-    /*
+static bool wait_measurement_ready(void) {
+    uint8_t status = 0;
     uint32_t start = hal_get_tick_ms();
-    uint8_t status_reg = 0;
     do {
-        HAL_I2C_Mem_Read(&hi2c1, TOF_I2C_ADDR << 1, TOF_REG_RESULT_RANGE_STATUS,
-                          I2C_MEMADD_SIZE_8BIT, &status_reg, 1, HAL_MAX_DELAY);
-        if (status_reg & 0x01) return true;
-    } while ((hal_get_tick_ms() - start) < TOF_MAX_TIMEOUT_MS);
+        if (!reg_read(REG_RESULT_INTERRUPT_STATUS, &status, 1)) return false;
+        if ((status & 0x07U) != 0U) return true;
+    } while ((hal_get_tick_ms() - start) < TOF_READY_TIMEOUT_MS);
     return false;
-    */
-    return false; /* placeholder: always "times out" until I2C is wired */
+}
+
+static bool reference_calibration(uint8_t start_value) {
+    if (!reg_write(REG_SYSRANGE_START, start_value)) return false;
+    if (!wait_measurement_ready()) return false;
+    return reg_write(REG_SYSTEM_INTERRUPT_CLEAR, 0x01) &&
+           reg_write(REG_SYSRANGE_START, 0x00);
+}
+
+static bool start_continuous(void) {
+    return reg_write(0x80, 0x01) && reg_write(0xFF, 0x01) &&
+           reg_write(0x00, 0x00) && reg_write(REG_STOP_VARIABLE, stop_variable) &&
+           reg_write(0x00, 0x01) && reg_write(0xFF, 0x00) &&
+           reg_write(0x80, 0x00) && reg_write(REG_SYSRANGE_START, 0x02);
+}
+
+bool tof_init(void) {
+    uint8_t model_id = 0;
+    uint8_t pad_config = 0;
+    uint8_t gpio_polarity = 0;
+
+    initialized = false;
+    consecutive_timeouts = 0;
+    last_valid_mm = 0;
+
+    if (!reg_read(REG_IDENTIFICATION_MODEL_ID, &model_id, 1) ||
+        model_id != MODEL_ID_EXPECTED) return false;
+    init_stage = 1U;
+
+    if (!reg_read(REG_VHV_CONFIG_PAD_SCL_SDA, &pad_config, 1) ||
+        !reg_write(REG_VHV_CONFIG_PAD_SCL_SDA, (uint8_t)(pad_config | 0x01U)) ||
+        !reg_write(0x88, 0x00) ||
+        !reg_write(0x80, 0x01) || !reg_write(0xFF, 0x01) ||
+        !reg_write(0x00, 0x00) ||
+        !reg_read(REG_STOP_VARIABLE, &stop_variable, 1) ||
+        !reg_write(0x00, 0x01) || !reg_write(0xFF, 0x00) ||
+        !reg_write(0x80, 0x00)) return false;
+    init_stage = 2U;
+
+    if (!configure_reference_spads() || !load_default_tuning()) return false;
+    init_stage = 3U;
+
+    if (!reg_write(REG_SYSTEM_INTERRUPT_CONFIG, 0x04) ||
+        !reg_read(REG_GPIO_HV_MUX_ACTIVE_HIGH, &gpio_polarity, 1) ||
+        !reg_write(REG_GPIO_HV_MUX_ACTIVE_HIGH,
+                   (uint8_t)(gpio_polarity & (uint8_t)~0x10U)) ||
+        !reg_write(REG_SYSTEM_INTERRUPT_CLEAR, 0x01)) return false;
+    init_stage = 4U;
+
+    if (!reg_write(REG_SYSTEM_SEQUENCE_CONFIG, 0x01) ||
+        !reference_calibration(0x41) ||
+        !reg_write(REG_SYSTEM_SEQUENCE_CONFIG, 0x02) ||
+        !reference_calibration(0x01) ||
+        !reg_write(REG_SYSTEM_SEQUENCE_CONFIG, 0xE8) ||
+        !start_continuous()) return false;
+
+    initialized = true;
+    init_stage = 8U;
+    return true;
+}
+
+static uint16_t timeout_result(tof_status_t *status) {
+    if (consecutive_timeouts < UINT8_MAX) ++consecutive_timeouts;
+    if (status != NULL) {
+        *status = consecutive_timeouts >= TOF_TIMEOUT_ERR_THRESHOLD
+                      ? TOF_TIMEOUT : TOF_OK;
+    }
+    return last_valid_mm;
 }
 
 uint16_t tof_read_mm(tof_status_t *status) {
-    uint8_t start_cmd = 0x01;
-    /* HAL_I2C_Mem_Write(&hi2c1, TOF_I2C_ADDR << 1, TOF_REG_SYSRANGE_START,
-                          I2C_MEMADD_SIZE_8BIT, &start_cmd, 1, HAL_MAX_DELAY); */
-    (void)start_cmd;
+    uint8_t ready = 0;
+    uint8_t result[12];
+    uint8_t device_status;
+    uint16_t mm;
 
-    if (!tof_wait_for_data()) {
-        if (consecutive_timeouts < 0xFF) consecutive_timeouts++;
-        if (status) {
-            *status = (consecutive_timeouts >= TOF_TIMEOUT_ERR_THRESHOLD)
-                       ? TOF_TIMEOUT : TOF_OK;
-        }
-        return last_valid_mm; /* hold last good reading rather than report 0 */
+    if (!initialized ||
+        !reg_read(REG_RESULT_INTERRUPT_STATUS, &ready, 1) ||
+        (ready & 0x07U) == 0U) return timeout_result(status);
+
+    if (!reg_read(REG_RESULT_RANGE_STATUS, result, sizeof(result)) ||
+        !reg_write(REG_SYSTEM_INTERRUPT_CLEAR, 0x01)) {
+        return timeout_result(status);
     }
 
-    uint8_t range_status = 0;
-    uint8_t buf[2] = {0};
-    /* HAL_I2C_Mem_Read(&hi2c1, TOF_I2C_ADDR << 1, TOF_REG_RESULT_RANGE_STATUS,
-                         I2C_MEMADD_SIZE_8BIT, &range_status, 1, HAL_MAX_DELAY); */
-    /* HAL_I2C_Mem_Read(&hi2c1, TOF_I2C_ADDR << 1, TOF_REG_RESULT_RANGE_MM,
-                         I2C_MEMADD_SIZE_8BIT, buf, sizeof(buf), HAL_MAX_DELAY); */
-
     consecutive_timeouts = 0;
-    uint16_t mm = (uint16_t)((buf[0] << 8) | buf[1]);
-
-    if ((range_status & TOF_RANGE_STATUS_MASK) != TOF_RANGE_STATUS_VALID ||
-        mm > TOF_MAX_VALID_MM) {
-        if (status) *status = TOF_OUT_OF_RANGE;
+    device_status = (uint8_t)((result[0] & 0x78U) >> 3);
+    mm = (uint16_t)(((uint16_t)result[10] << 8) | result[11]);
+    if (device_status != RANGE_STATUS_VALID || mm > MAX_VALID_MM) {
+        if (status != NULL) *status = TOF_OUT_OF_RANGE;
         return last_valid_mm;
     }
 
     last_valid_mm = mm;
-    if (status) *status = TOF_OK;
+    if (status != NULL) *status = TOF_OK;
     return mm;
 }
