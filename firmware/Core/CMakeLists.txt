@@ -76,9 +76,16 @@ if(BUILD_TESTING)
     add_executable(test_remote_control Test/test_remote_control.c
                    Src/remote_control.c Src/mecanum_ik.c)
     add_executable(test_encoder       Test/test_encoder.c       Src/encoder.c)
+    # Stall protection: robot_control.c with stubbed motor/encoder drivers,
+    # so a test can hold a wheel at "commanded hard, not turning".
+    add_executable(test_stall         Test/test_stall.c
+                   Src/robot_control.c Src/pid.c
+                   ${CMAKE_CURRENT_SOURCE_DIR}/../../shared/protocol.c)
+    target_include_directories(test_stall PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../shared)
 
     foreach(host_test test_pid test_mecanum_ik test_ahrs test_remote_control
-                      test_encoder)
+                      test_encoder test_stall)
         target_include_directories(${host_test} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Inc)
         # -UNDEBUG keeps assert() live regardless of CMAKE_BUILD_TYPE.

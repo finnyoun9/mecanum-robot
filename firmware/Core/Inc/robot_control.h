@@ -31,6 +31,34 @@
 /* --- ToF emergency threshold --- */
 #define TOF_EMERGENCY_MM 100  /* Brake if obstacle < 10 cm */
 
+/* --- Stall protection ---
+ * A wheel commanded hard but not turning is either jammed, disconnected or
+ * a dead motor. With no detection the PI integral winds to PID_INTEGRAL_MAX
+ * and pins the output at full duty into a stationary motor: JGA25-370 stall
+ * current is ~5-8x its no-load draw and the 3S pack has no current limit,
+ * which is enough to cook the windings.
+ *
+ * Thresholds come from the 2026-08-29 open-loop measurements and the duty
+ * sweep in docs/hardware-closed-loop-roadmap.md. The duty floor sits above
+ * the measured 5-10% start deadzone (5% = 50: no rotation at all; 10% = 100:
+ * 0.32 rev/s = 2.0 rad/s), so a healthy motor driven at 150 always turns
+ * comfortably faster than STALL_SPEED_MAX. The failed RR motor, by
+ * contrast, managed 0.49 rad/s at 80% duty.
+ *
+ * 150 rather than something higher because the duty a stall can reach
+ * depends on the gains in force: with the PID_*_DEFAULT placeholders below
+ * the output saturates at Kp*err + Ki*integral_max = 260 and can never
+ * exceed it, so a higher floor would silently disable this protection
+ * while still pushing 26% duty into a stationary motor. The M2-validated
+ * gains the Pi actually sends (Kp=100/Ki=300) saturate at 1000 instead.
+ *
+ * The 500 ms window is deliberately longer than the worst-case startup
+ * transient: a stopped wheel accelerating past 1.0 rad/s takes well under
+ * 100 ms at the real gains, so a genuine start never trips this. */
+#define STALL_DUTY_MIN     150.0f  /* |output| above this counts as "driven hard" */
+#define STALL_SPEED_MAX    1.0f    /* rad/s below this counts as "not turning" */
+#define STALL_TRIP_MS      500     /* sustained duration before tripping */
+
 /* --- Robot state --- */
 typedef struct {
     /* 4 independent PID controllers */
@@ -62,6 +90,14 @@ typedef struct {
 
     /* Error flags */
     uint8_t error_flags;
+
+    /* Stall detection: per-wheel accumulated time (ms) spent driven hard
+     * while not turning. Reset as soon as the wheel moves or the command
+     * backs off; trips ERR_MOTOR_FAULT at STALL_TRIP_MS. */
+    uint32_t stall_ms[MOTOR_COUNT];
+    /* Bitmask of wheels latched as stalled (bit i = motor i). Latched
+     * wheels stay at zero duty until robot_emergency_clear(). */
+    uint8_t  stalled_mask;
 
     /* Overall state */
     bool emergency_stop_active;
@@ -110,6 +146,15 @@ void robot_update_tof(uint16_t distance_mm, bool timed_out);
 void robot_emergency_stop(void);
 
 /** Clear emergency stop */
+/** Clear a latched emergency stop (ToF / comm watchdog / boot).
+ *  Does NOT release a latched motor fault — see robot_clear_motor_fault(). */
 void robot_emergency_clear(void);
+
+/** Release wheels latched by stall detection. Deliberately separate from
+ *  robot_emergency_clear(): the deadman recovery path calls that on every
+ *  fresh motion command, which would otherwise re-drive a dead motor a
+ *  few hundred ms after every comm blip. Call this only after the
+ *  mechanical or electrical cause has actually been dealt with. */
+void robot_clear_motor_fault(void);
 
 #endif /* ROBOT_CONTROL_H */
