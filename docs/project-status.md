@@ -489,6 +489,8 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
 - **仍未解决（独立于链路的真 bug）：** 洪流测试末期的 Cortex-M3 lockup
   （PC=0xFFFFFFFE、MSP=0xFFFFFFD8、CFSR=UNDEFINSTR+IACCVIOL）尚未定位；
   下次复现时 **halt 后先抓 CFSR/HFSR/BFAR/PSP/ICSR 再复位**。
+  SIL 已新增 RX ring 填满、噪声排空、合法 heartbeat 恢复 ACK 的回归，证明当前可模拟的
+  ring 溢出/解析路径会丢计数但不会卡死；该测试不覆盖真机 DMA 错误中断重入。
 
 
 ### 已实测（真机）

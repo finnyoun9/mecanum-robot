@@ -94,7 +94,10 @@ void comm_rx_dma_resync(void) {
 void sil_uart_rx_feed(const uint8_t *data, uint8_t len) {
     for (uint8_t i = 0; i < len; i++) {
         uint16_t next = (uint16_t)((rx_head + 1) % RX_RING_SIZE);
-        if (next == rx_tail) break; /* ring full */
+        if (next == rx_tail) {
+            rx_overflows++;
+            continue; /* ring full: account for every dropped byte */
+        }
         rx_ring[rx_head] = data[i];
         rx_head = next;
     }

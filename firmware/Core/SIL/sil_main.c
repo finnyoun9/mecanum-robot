@@ -33,6 +33,7 @@
 extern void sil_uart_rx_feed(const uint8_t *data, uint8_t len);
 extern void comm_send_frame(const uint8_t *frame, uint8_t len);
 extern uint32_t hal_get_tick_ms(void);
+extern uint16_t comm_rx_overflows(void);
 
 /* Semaphore used by comm_send_frame (normally created in firmware_arch_main). */
 extern SemaphoreHandle_t xTxComplete;
@@ -264,6 +265,33 @@ int main(int argc, char **argv) {
     printf("Heartbeat ACK frames: %d\n", hb_ack);
     bool hb_ok = (hb_ack >= 1);
 
+    /* --- 5c. RX flood recovery regression. Fill the software ring before
+     * CommTask gets a turn, then prove parser resynchronisation and ACK
+     * recovery after the dropped bytes. This is the application-level
+     * counterpart of the historical hardware UART error-storm investigation.
+     */
+    int flood_ack = 0;
+    {
+        uint8_t noise[255] = {0};
+        uint8_t hb_frame[PROTO_MAX_FRAME];
+        uint8_t hb_len;
+        static uint8_t flood_seq = 220;
+
+        sil_uart_rx_feed(noise, sizeof(noise));
+        sil_uart_rx_feed(noise, sizeof(noise));
+        sil_sched_tick(); /* drain full ring of noise */
+        if (proto_encode(CMD_HEARTBEAT, NULL, 0,
+                         hb_frame, &hb_len, flood_seq++) >= 0) {
+            sil_uart_rx_feed(hb_frame, hb_len);
+        }
+        sil_sched_tick();
+        sil_sched_tick();
+        (void)drain_tx_frames(&flood_ack);
+    }
+    const bool flood_ok = comm_rx_overflows() > 0U && flood_ack >= 1;
+    printf("RX flood: drops=%u heartbeat ACK=%d\n",
+           comm_rx_overflows(), flood_ack);
+
     /* --- 6. Verify --- */
     printf("\n=== Verification ===\n");
 
@@ -306,16 +334,18 @@ int main(int argc, char **argv) {
 
     /* Summary */
     printf("\n=== Result ===\n");
-    if (pid_ok && enc_ok && odo_ok && hb_ok) {
+    if (pid_ok && enc_ok && odo_ok && hb_ok && flood_ok) {
         printf("PASS: PID closed loop verified — PWM outputs non-zero, "
-               "encoders accumulate, odometry published, heartbeat ACKed.\n");
+               "encoders accumulate, odometry published, heartbeat ACKed, "
+               "RX flood recovered.\n");
         return 0;
     } else {
-        printf("FAIL: pid=%s enc=%s odo=%s hb=%s\n",
+        printf("FAIL: pid=%s enc=%s odo=%s hb=%s flood=%s\n",
                pid_ok ? "PASS" : "FAIL",
                enc_ok ? "PASS" : "FAIL",
                odo_ok ? "PASS" : "FAIL",
-               hb_ok ? "PASS" : "FAIL");
+               hb_ok ? "PASS" : "FAIL",
+               flood_ok ? "PASS" : "FAIL");
         return 1;
     }
 }
