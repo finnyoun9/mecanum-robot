@@ -16,6 +16,10 @@
 ![STM32](https://img.shields.io/badge/MCU-STM32F103-03234B?logo=stmicroelectronics)
 ![Raspberry Pi](https://img.shields.io/badge/SBC-Raspberry_Pi_5-A22846?logo=raspberrypi)
 
+<img src="docs/screenshots/robot-hero-2026-08-31.jpg" alt="MCR 真机顶视图（2026-08-31，M5 阶段）" width="88%">
+
+<sub>真机顶视图 · 2026-08-31 · Pi 5 + IMX219 + LD06 + ToF/OLED 已上车</sub>
+
 <img src="docs/screenshots/rviz2_mecanum_square_moving.png" alt="MCR 在 RViz2 中执行全向方形轨迹" width="88%">
 
 </div>
@@ -89,6 +93,48 @@ flowchart TB
 | 边缘计算 | Raspberry Pi 5、Debian 12 | 设备接入、容器运行、CSI 视觉推理 |
 | 机器人中间件 | ROS 2 Jazzy、Ubuntu 24.04 Docker | 控制器、TF、融合定位、SLAM、导航、感知桥 |
 | 验证 | CTest、SIL、GTest、GitHub Actions | 协议、运动学、控制逻辑、驱动和构建回归 |
+
+## 技术地图
+
+按子系统分类的技术点导航；每个节点的理论基础、代码位置和用途见 [技术地图详情](docs/technical-map.md)。
+
+```mermaid
+flowchart TB
+    ROOT((MCR 技术地图))
+
+    subgraph RT[实时控制]
+        RT1[FreeRTOS 5 任务调度]
+        RT2[PID / PI 速度闭环]
+        RT3[定时器 PWM + EXTI 编码器]
+        RT4[麦克纳姆运动学]
+    end
+
+    subgraph COMM[通信链路]
+        C1[UART 协议 + CRC16]
+        C2[DMA + 环形缓冲区]
+        C3[I2C 总线]
+        C4[SPI + NRF24 无线]
+    end
+
+    subgraph SENSE[感知与状态估计]
+        S1[Mahony 姿态解算]
+        S2[ToF 测距]
+        S3[EKF 状态估计]
+        S4[LD06 SLAM 建图]
+    end
+
+    subgraph SYS[系统与验证]
+        Y1[SIL 软件在环]
+        Y2[GitHub Actions CI]
+        Y3[安全状态机 / 多源仲裁]
+        Y4[电源与 ADC 分压]
+    end
+
+    ROOT --> RT
+    ROOT --> COMM
+    ROOT --> SENSE
+    ROOT --> SYS
+```
 
 ## 验证数据
 
@@ -172,11 +218,31 @@ ctest --test-dir firmware/Core/build --output-on-failure
 ## 可视化
 
 <details>
+<summary><strong>展开真机实拍</strong></summary>
+
+| 顶视图（2026-08-31） | 底盘接线细节 |
+| --- | --- |
+| ![MCR 真机顶视图](docs/screenshots/robot-hero-2026-08-31.jpg) | ![底盘 STM32/电机/IMU 接线](docs/screenshots/robot-wiring-detail.jpg) |
+
+</details>
+
+<details>
 <summary><strong>展开 RViz2 验证截图</strong></summary>
 
 | 机器人模型 | 全向轨迹进行中 | 方形轨迹完成 |
 | --- | --- | --- |
 | ![](docs/screenshots/rviz2.png) | ![](docs/screenshots/rviz2_mecanum_square_moving.png) | ![](docs/screenshots/rviz2_mecanum_square_complete.png) |
+
+</details>
+
+<details>
+<summary><strong>展开 SLAM 建图现状（M5 排查中，非成功案例）</strong></summary>
+
+同一次遥控建图会话的三个阶段（2026-08-30），如实展示当前扇贝状扭曲和扫描匹配伪影，用于对照 [项目状态](docs/project-status.md) 里 gyro 零偏排查的记录；不代表建图已完成。
+
+| 阶段 1 | 阶段 2 | 阶段 3 |
+| --- | --- | --- |
+| ![SLAM 建图阶段1，出现扇贝状扭曲](docs/screenshots/2026-08-30_slam_map.png) | ![SLAM 建图阶段2，扭曲随轨迹扩大](docs/screenshots/2026-08-30_slam_map2.png) | ![SLAM 建图阶段3，扫描匹配伪影更明显](docs/screenshots/2026-08-30_slam_map3.png) |
 
 </details>
 
@@ -196,12 +262,12 @@ ctest --test-dir firmware/Core/build --output-on-failure
 | 文档 | 内容 |
 | --- | --- |
 | [项目状态](docs/project-status.md) | 最新进展、真机证据、阻塞项与下一步 |
+| [技术地图](docs/technical-map.md) | 按子系统分类的技术点：理论、代码位置、用途 |
 | [接线指南](docs/wiring.md) | STM32、TB6612、编码器、I2C、NRF24 引脚 |
 | [供电方案](docs/power-system.md) | 3S 电池、电源树、保护与故障记录 |
 | [闭环路线](docs/hardware-closed-loop-roadmap.md) | 控制 bring-up、标定和验收方法 |
 | [无线遥控](docs/remote_control.md) | 遥控协议、按键、接线与安全行为 |
 | [ROS 2 Docker](docker/README.md) | Pi 宿主机、容器、设备和远程 RViz2 |
-| [项目亮点](docs/resume-highlights.md) | 可用于简历与面试的证据边界 |
 
 <details>
 <summary><strong>仓库结构</strong></summary>

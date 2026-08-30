@@ -614,6 +614,9 @@ JGA25-370 堵转电流约为空载的 5–8 倍，而 3S 电池无限流、
   NRF24L01 的旧模块已故障下线；新模块的 SPI 健康检查已通过，但尚未完成手柄 Auto-ACK
   与实际收包的当前板验收，不能写成整车无线遥控当前可用。
 - 机械臂：只有 host protocol 与 SIL 骨架，硬件缺货未到（智能总线舵机版），见 [manipulator/docs/decision-log.md](../manipulator/docs/decision-log.md)。
+- **标定常数守卫覆盖不全**（原 task-notes.md T4，2026-08-25 遗留）：`tools/check_calibration_constants.sh` 只守 `EDGES_PER_WHEEL_REV`，轮径没守。当时因此漏发现 `firmware/Core/Src/remote_control.c` 的 `wheel_radius` 残留旧值 0.0325（与其余四处的实测 0.030 差 8%）。待办：把 `encoder.h`（0.060 直径）、`mcr_hardware_interface.cpp`、URDF、`stm32_uart_sim.py` 的轮径也纳入守卫脚本。
+- **测试夹具残留旧轮径**（原 T5）：`ros2_ws/src/mcr_bringup/test/test_mecanum_kinematics.cpp:25` 仍写 `p.wheel_radius = 0.0325`，未标注是任意夹具值还是遗留 bug；下次改动前先判断意图并留痕。
+- **SIL 全链路未在真 Docker 环境复核**（原 T6）：`verify_sil.sh` 只跑过静态模型的主机测试；没有在 `mcr-ros2` 容器里跑通 `colcon build → stm32_uart_sim.py → robot.launch.py → verify_sil.sh` 的完整链路。
 
 ---
 

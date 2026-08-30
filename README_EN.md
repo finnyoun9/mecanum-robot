@@ -16,6 +16,10 @@ An integrated robotics platform spanning real-time motor control, wireless teleo
 ![STM32](https://img.shields.io/badge/MCU-STM32F103-03234B?logo=stmicroelectronics)
 ![Raspberry Pi](https://img.shields.io/badge/SBC-Raspberry_Pi_5-A22846?logo=raspberrypi)
 
+<img src="docs/screenshots/robot-hero-2026-08-31.jpg" alt="MCR hardware, top view (2026-08-31, M5 stage)" width="88%">
+
+<sub>Top view · 2026-08-31 · Pi 5 + IMX219 + LD06 + ToF/OLED onboard</sub>
+
 <img src="docs/screenshots/rviz2_mecanum_square_moving.png" alt="MCR executing an omnidirectional square trajectory in RViz2" width="88%">
 
 </div>
@@ -89,6 +93,48 @@ flowchart TB
 | Edge compute | Raspberry Pi 5, Debian 12 | Device access, containers, native CSI inference |
 | Robotics middleware | ROS 2 Jazzy, Ubuntu 24.04 Docker | Controllers, TF, fusion, SLAM, navigation, perception bridge |
 | Verification | CTest, SIL, GTest, GitHub Actions | Protocol, kinematics, control, drivers, and build regressions |
+
+## Technical Map
+
+A subsystem-grouped index of the technical topics in this project; theory, code location, and rationale for each node are in [Technical Map details](docs/technical-map.md).
+
+```mermaid
+flowchart TB
+    ROOT((MCR Technical Map))
+
+    subgraph RT[Real-time Control]
+        RT1[FreeRTOS 5-task scheduling]
+        RT2[PID / PI velocity loop]
+        RT3[Timer PWM + EXTI encoder]
+        RT4[Mecanum kinematics]
+    end
+
+    subgraph COMM[Communication Link]
+        C1[UART protocol + CRC16]
+        C2[DMA + ring buffer]
+        C3[I2C bus]
+        C4[SPI + NRF24 wireless]
+    end
+
+    subgraph SENSE[Perception & State Estimation]
+        S1[Mahony attitude filter]
+        S2[ToF ranging]
+        S3[EKF state estimation]
+        S4[LD06 SLAM mapping]
+    end
+
+    subgraph SYS[System & Verification]
+        Y1[SIL software-in-the-loop]
+        Y2[GitHub Actions CI]
+        Y3[Safety state machine / arbitration]
+        Y4[Power + ADC divider]
+    end
+
+    ROOT --> RT
+    ROOT --> COMM
+    ROOT --> SENSE
+    ROOT --> SYS
+```
 
 ## Measured Evidence
 
@@ -172,11 +218,31 @@ ctest --test-dir firmware/Core/build --output-on-failure
 ## Visualization
 
 <details>
+<summary><strong>Open hardware photos</strong></summary>
+
+| Top view (2026-08-31) | Chassis wiring detail |
+| --- | --- |
+| ![MCR top view](docs/screenshots/robot-hero-2026-08-31.jpg) | ![Chassis STM32/motor/IMU wiring](docs/screenshots/robot-wiring-detail.jpg) |
+
+</details>
+
+<details>
 <summary><strong>Open the RViz2 validation gallery</strong></summary>
 
 | Robot model | Omnidirectional trajectory | Completed square |
 | --- | --- | --- |
 | ![](docs/screenshots/rviz2.png) | ![](docs/screenshots/rviz2_mecanum_square_moving.png) | ![](docs/screenshots/rviz2_mecanum_square_complete.png) |
+
+</details>
+
+<details>
+<summary><strong>Open current SLAM mapping state (M5 in progress, not a success case)</strong></summary>
+
+Three stages of the same teleop mapping session (2026-08-30), shown as-is with the current scalloped distortion and scan-matching artifacts, for cross-reference with the gyro-bias investigation logged in [project status](docs/project-status.md). This does not represent finished mapping.
+
+| Stage 1 | Stage 2 | Stage 3 |
+| --- | --- | --- |
+| ![SLAM mapping stage 1, scalloped distortion](docs/screenshots/2026-08-30_slam_map.png) | ![SLAM mapping stage 2, distortion grows with the trajectory](docs/screenshots/2026-08-30_slam_map2.png) | ![SLAM mapping stage 3, scan-matching artifacts more visible](docs/screenshots/2026-08-30_slam_map3.png) |
 
 </details>
 
@@ -196,12 +262,12 @@ Shortest path forward: **gyro bias calibration → EKF validation → remapping 
 | Document | Scope |
 | --- | --- |
 | [Project status](docs/project-status.md) | Latest progress, hardware evidence, blockers, next steps |
+| [Technical map](docs/technical-map.md) | Subsystem-grouped topics: theory, code location, rationale |
 | [Wiring guide](docs/wiring.md) | STM32, TB6612, encoder, I2C, and NRF24 pinout |
 | [Power system](docs/power-system.md) | 3S battery tree, protection, and failure records |
 | [Closed-loop roadmap](docs/hardware-closed-loop-roadmap.md) | Control bring-up, calibration, and acceptance |
 | [Wireless control](docs/remote_control.md) | Protocol, keys, wiring, and safety behavior |
 | [ROS 2 Docker](docker/README.md) | Pi host, container, devices, and remote RViz2 |
-| [Project highlights](docs/resume-highlights.md) | Defensible engineering evidence for interviews |
 
 <details>
 <summary><strong>Repository layout</strong></summary>
