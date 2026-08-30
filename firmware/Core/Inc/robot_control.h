@@ -18,6 +18,7 @@
 #define ODOM_PUBLISH_HZ  50    /* Odometry update frequency */
 #define TOF_READ_HZ      20    /* ToF read frequency */
 #define COMM_WATCHDOG_MS 250   /* Handset sends at 100 ms; allow poll jitter */
+#define REMOTE_ACTIVE_TIMEOUT_MS 250  /* Same margin: expire remote priority if it goes quiet */
 
 /* --- Default PID gains (tuned per motor, these are starting points) ---
  * Speed loop starts as pure PI (Kd = 0) per the closed-loop roadmap:
@@ -112,6 +113,19 @@ typedef struct {
 
     /* Overall state */
     bool emergency_stop_active;
+
+    /* True while the handset's K1 is toggled on. Gates CMD_VEL_CTRL from
+     * the Pi (see robot_handle_command()): the two writers share
+     * target_w[] with no other arbitration, and the Pi's periodic
+     * keepalive (see mcr_hardware_interface.cpp) sends often enough to
+     * intermittently stomp the handset's own commands otherwise. */
+    bool remote_active;
+    /* Last tick a remote packet was processed, regardless of its K1
+     * state. Lets robot_ctrl_loop() expire remote_active on its own
+     * (see REMOTE_ACTIVE_TIMEOUT_MS) if the handset goes silent -- powered
+     * off or out of range -- without ever toggling K1 off, so the Pi
+     * doesn't stay locked out of a handset that isn't there any more. */
+    uint32_t remote_last_rx_tick;
 } robot_state_t;
 
 /* --- Public API --- */
@@ -131,6 +145,17 @@ void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len);
  * watchdog from firing while the Pi is not sending UART commands.
  */
 void robot_set_target_wheels(const float w[4]);
+
+/**
+ * @brief Record whether the handset is actively driving (its K1 state).
+ * Call on every processed remote packet, enabled or not, so the flag
+ * tracks the handset live rather than latching stale from one toggle.
+ * While true, robot_handle_command() ignores CMD_VEL_CTRL's wheel
+ * targets (the handset keeps writing them directly via
+ * robot_set_target_wheels()) so the Pi can't intermittently overwrite
+ * them with its own keepalive.
+ */
+void robot_set_remote_active(bool active);
 
 /** Prepare and send odometry feedback frame to Pi */
 void robot_send_odometry(void);

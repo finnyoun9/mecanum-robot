@@ -162,6 +162,15 @@ void robot_ctrl_loop(void) {
         }
     }
 
+    /* --- Remote priority expiry ---
+     * A handset that goes silent without toggling K1 off first (powered
+     * off, out of range) must not leave the Pi locked out of a link that
+     * no longer exists. */
+    if (g_robot.remote_active &&
+        (now - g_robot.remote_last_rx_tick) > REMOTE_ACTIVE_TIMEOUT_MS) {
+        g_robot.remote_active = false;
+    }
+
     /* --- Communication timeout check --- */
     if ((now - g_robot.last_rx_tick) > COMM_WATCHDOG_MS) {
         if (!g_robot.comm_timeout) {
@@ -223,6 +232,11 @@ void robot_set_target_wheels(const float w[4]) {
     }
 }
 
+void robot_set_remote_active(bool active) {
+    g_robot.remote_active = active;
+    g_robot.remote_last_rx_tick = hal_get_tick_ms();
+}
+
 void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len) {
     g_robot.last_rx_tick = hal_get_tick_ms();
     g_robot.comm_timeout = false;
@@ -235,10 +249,19 @@ void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len) {
          * undefined behaviour on ARM (unaligned float access traps). */
         cmd_vel_ctrl_t vel;
         memcpy(&vel, payload, sizeof(vel));
-        g_robot.target_w[0] = vel.w1;
-        g_robot.target_w[1] = vel.w2;
-        g_robot.target_w[2] = vel.w3;
-        g_robot.target_w[3] = vel.w4;
+        /* The handset takes priority whenever it's actively driving: it
+         * writes target_w[] directly via robot_set_target_wheels(), and
+         * letting the Pi's CMD_VEL_CTRL also land here has no arbitration
+         * beyond "whichever wrote last" -- the Pi's periodic keepalive
+         * then intermittently overwrites the handset's own commands with
+         * a stale target. Still counts as a live command for the
+         * deadman-recovery check below either way. */
+        if (!g_robot.remote_active) {
+            g_robot.target_w[0] = vel.w1;
+            g_robot.target_w[1] = vel.w2;
+            g_robot.target_w[2] = vel.w3;
+            g_robot.target_w[3] = vel.w4;
+        }
         /* Deadman-switch recovery: if the stop was latched by the comm
          * watchdog (or boot) and no ToF obstacle is latched, resume on
          * this fresh motion command over the live link. Explicit e-stop

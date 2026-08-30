@@ -578,6 +578,7 @@ void RemoteTask(void *pvParameters) {
         if (nrf24l01_receive()) {
             remote_result_t res;
             if (remote_process(nrf24l01_rx_packet(), &rstate, &res)) {
+                robot_set_remote_active(rstate.enabled);
                 if (res.key == REMOTE_KEY_ESTOP) {
                     robot_emergency_stop();
                 }
