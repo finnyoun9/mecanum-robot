@@ -4,8 +4,8 @@
  Passive mode (default): verifies the 50 Hz odometry stream, heartbeat
  ACKs and that encoder counts stay still with no motion command.
 
- Motion mode (--spin RAD_S): preserves the firmware's active PI gains by
- default, streams CMD_VEL_CTRL at 20 Hz for a few seconds, and reports per-wheel
+ Motion mode (--spin RAD_S): tunes all four wheel PI loops over the link,
+ streams CMD_VEL_CTRL at 20 Hz for a few seconds, and reports per-wheel
  encoder-derived speed from the returned odometry frames — proving the
  full chain Pi -> UART DMA -> CtrlTask PI -> TB6612 -> encoders -> odom.
 
@@ -123,8 +123,6 @@ def main() -> int:
     ap.add_argument("--spin", type=float, default=0.0,
                     help="wheel target rad/s for the motion phase (0 = passive)")
     ap.add_argument("--spin-seconds", type=float, default=3.0)
-    ap.add_argument("--tune-pid", action="store_true",
-                    help="replace all wheel gains with the legacy Kp=100 Ki=300 test values")
     args = ap.parse_args()
 
     try:
@@ -168,14 +166,11 @@ def main() -> int:
         print("RESULT: PASSIVE OK")
         return 0
 
-    if args.tune_pid:
-        print("\nphase 2: explicit legacy PI tune (Kp=100 Ki=300) on all 4 wheels")
-        for motor in range(4):
-            link.write(pid_frame(motor, 100.0, 300.0, 0.0, 1.0, seq)); seq += 1
-        time.sleep(0.2)
-        link.pump(0.2)
-    else:
-        print("\nphase 2: preserve active firmware PI gains")
+    print(f"\nphase 2: PI tune (Kp=100 Ki=300, M2-validated) on all 4 wheels")
+    for motor in range(4):
+        link.write(pid_frame(motor, 100.0, 300.0, 0.0, 1.0, seq)); seq += 1
+    time.sleep(0.2)
+    link.pump(0.2)
 
     target = args.spin
     spin_s = args.spin_seconds
@@ -204,8 +199,8 @@ def main() -> int:
         link.pump(0.02)
     counts_coast = link.odom[-1][1]
 
-    print("phase 5: final zero command (normal, restartable stop)")
-    link.write(vel_frame(0, 0, 0, 0, seq)); seq += 1
+    print(f"phase 5: emergency stop frame")
+    link.write(encode_frame(CMD_EMERGENCY_STOP, b"", seq)); seq += 1
     link.pump(0.3)
     fd.close()
 
