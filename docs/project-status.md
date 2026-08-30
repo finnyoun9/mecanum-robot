@@ -708,6 +708,52 @@ four-wheel plant"——换到四轮/RR 上纯 PI 直接过冲震荡，实测 RR 
 重建，复用 `link_check.py` 的帧解析。新增 `tools/rr_only_check.py`：只命令 RR、其余三轮
 锁 0，用于隔离单轮问题；支持 `--kp/--ki/--kd/--integral-limit` 传参复测不同增益组合。
 
+### 2026-08-30（三）：合并 origin 后修正——上面"PID 调参"的结论只对了一半
+
+合并 origin/main（落后 29 个提交）后发现更完整的真相，记录在案，避免以上两节的结论被
+当成最终版：
+
+- **RR 电机之前确实是硬件故障**，不是单纯调参问题。上游 2026-08-29 用交叉互换电机
+  输出线的方法（编码器不动）实锤定位：坏电机换到 RL 通道上只能转 0.20–0.29 rad/s，
+  排除了编码器/接线假设。当天用一个减速比不匹配（1:9.3 vs 其他三轮 1:20.4）的
+  620RPM 电机应急了一天。**今天已经拆掉应急电机，换上减速比匹配的正式电机，实测通过**——
+  上面两节里"RR 单独测只有 0.84–1.73 rad/s"，很大程度上是那台应急电机减速比不匹配
+  导致的，不是纯 PID 震荡假象；今天的猛药参数震荡是叠加在这个问题之上的第二个因素，
+  两个原因同时存在，不是互斥的。
+- 上游同时已经实现了本节之前列为"待办"的东西：`speed_feedforward()` 前馈、
+  `slew_towards()` 目标限速斜坡、零点附近停止消抖（`STOP_TARGET_RAD_S`，从根本上解决
+  "咔嚓"声——上游原话 "chasing encoder quantisation around zero produces the audible
+  forward/reverse clicking"），以及**堵转保护**（`stalled_mask`/`STALL_DUTY_MIN=150`/
+  `STALL_SPEED_MAX=1.0`/`STALL_TRIP_MS=500`，某轮堵转 500ms 自动切断该轮、置
+  `ERR_MOTOR_FAULT`，`robot_clear_motor_fault()` 独立于 `robot_emergency_clear()`
+  释放，避免 deadman 恢复路径每次通信抖动后又把坏电机重新驱动）。SIL/单测验证，本次
+  已随 `rtos_drive` 一起烧录上真机，但**真机堵转触发尚未专门验收**（建议找机会人为堵住
+  一个轮子，确认 500ms 内只切断该轮）。
+- 合并方式：`robot_control.c`/`robot_control.h`/`main.c`/`tools/drive_check.py`/
+  `tools/imu_watch.py`/`tools/tof_watch.py` 直接采用 upstream 版本（本节前面两小节
+  本地写的对应改动，内容上是 upstream 版本的子集或被取代）；`docs/project-status.md`
+  手动整合保留双方记录；新增的 `tools/rr_only_check.py` 无冲突保留。合并途中还遇到
+  `.git/objects` 里 18 个 0 字节坏对象（同一类"写入中途被打断"故障，这次直接命中
+  git 对象存储），删除后 `git fetch` 重新拉取修复，`git fsck --full` 确认干净。
+  另外 `git merge` 对 `tools/drive_check.py` 出现过一次静默错误合并（未标记冲突，
+  但内容既非本地也非 upstream 的正确版本），已用 `git show origin/main:...` 强制
+  对齐修复。
+- **重合并后的真实四轮表现**：固件默认增益（`Kp=15/Ki=35`+前馈，测试时完全没发
+  `CMD_PID_TUNE`）下，四轮 **2.39–2.49 rad/s**（目标 2.5），coast 只有 6–10 个
+  edge，四轮高度一致、停止干净。**但 `tools/drive_check.py` 合并后的版本把
+  `--tune-pid` 开关整个删掉了，phase 2 现在无条件下发 `Kp=100/Ki=300`**——用这个
+  跑出来 RR 又掉回 1.52 rad/s（FL/FR/RL 仍有 2.41–2.50），**复现了
+  `remote_pid_drive_main.c`/`robot_control.h` 代码注释里自己都点名警告过的
+  "Kp=100/Ki=300 overdrive 四轮平台"**。也就是说现在的 `drive_check.py` 默认行为
+  会主动踩上游自己标注过的坑。⚠️ 待办：`drive_check.py` phase 2 要不要恢复可选
+  tune、或者干脆默认改用 `Kp=15/Ki=35`，需要决定；在此之前，**新的四轮验收测试
+  不要用 `drive_check.py` 默认参数下结论，要么跳过 tune 步骤、要么显式传验收通过的
+  `Kp=15/Ki=35`**。
+
+结论：RR 硬件问题已解决（新电机装好、减速比匹配、实测通过），固件侧的前馈/防抖/
+堵转保护已合并上板，四轮在正确增益下表现一致且干净。下地前仍然是本节最前面列的
+那几条 M3 通过条件未达成，加上堵转保护的真机验收待办。
+
 ---
 
 ## 固件结构（容易走错的地方）
