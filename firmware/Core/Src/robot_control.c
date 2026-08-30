@@ -316,7 +316,7 @@ void robot_send_odometry(void) {
     odom.tof_distance_mm = g_robot.tof_distance_mm;
     memcpy(odom.imu_q, g_robot.imu_q, sizeof(odom.imu_q));
     memcpy(odom.imu_gyro, g_robot.imu_gyro, sizeof(odom.imu_gyro));
-    odom.battery_pct  = 0; /* TODO: ADC read */
+    odom.battery_pct  = g_robot.battery_valid ? g_robot.battery_pct : 0U;
     odom.error_flags  = g_robot.error_flags;
 
     uint8_t frame[PROTO_MAX_FRAME];
@@ -333,6 +333,12 @@ const robot_state_t* robot_get_state(void) {
 void robot_update_imu(const float q[4], const float gyro[3]) {
     memcpy(g_robot.imu_q, q, sizeof(g_robot.imu_q));
     memcpy(g_robot.imu_gyro, gyro, sizeof(g_robot.imu_gyro));
+}
+
+void robot_update_battery(uint16_t battery_mv, uint8_t battery_pct, bool valid) {
+    g_robot.battery_mv = battery_mv;
+    g_robot.battery_pct = battery_pct > 100U ? 100U : battery_pct;
+    g_robot.battery_valid = valid;
 }
 
 void robot_update_tof(uint16_t distance_mm, bool valid, bool timed_out) {

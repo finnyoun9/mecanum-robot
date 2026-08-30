@@ -58,7 +58,7 @@ FREERTOS = $(ROOT)/Middleware/FreeRTOS/Source
 C_SRCS += stm32f1xx_it_rtos.c
 # Application (Core/Src) + shared protocol
 C_SRCS += main.c robot_control.c motor.c encoder.c pid.c mecanum_ik.c ahrs.c \
-          mpu6050.c tof_sensor.c ssd1306.c oled_ui.c nrf24l01.c remote_control.c protocol.c
+          mpu6050.c tof_sensor.c ssd1306.c oled_ui.c battery.c nrf24l01.c remote_control.c protocol.c
 # FreeRTOS kernel (ARM_CM3 port, heap_4 dynamic allocation)
 C_SRCS += tasks.c queue.c list.c timers.c port.c heap_4.c
 CFLAGS += -I fwinc
@@ -72,6 +72,9 @@ CFLAGS += -DHW_OLED
 endif
 ifeq ($(OLED_CTRL),SH1106)
 CFLAGS += -DHW_OLED_SH1106
+endif
+ifeq ($(BATTERY),1)
+CFLAGS += -DHW_BATTERY_ADC
 endif
 CFLAGS += -I$(FREERTOS)/include -I$(FREERTOS)/portable/GCC/ARM_CM3
 else

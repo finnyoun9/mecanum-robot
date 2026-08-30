@@ -30,6 +30,7 @@
 #include "mpu6050.h"
 #include "tof_sensor.h"
 #include "ssd1306.h"
+#include "battery.h"
 
 #include <stddef.h>
 
@@ -47,11 +48,15 @@ extern void SystemClock_Config(void);
 static TIM_HandleTypeDef htim2;
 static TIM_HandleTypeDef htim3;
 static TIM_HandleTypeDef htim4;
+#ifdef HW_BATTERY_ADC
+static bool battery_adc_ready;
+#endif
 
 /* I2C2 on PB10/PB11 — MPU6050 (0x68) and, once fitted, VL53L0X (0x29)
  * share the bus. Not static: mpu6050.c references it by name, matching how
  * huart1 is shared with Core/Src/main.c. I2C1's pins (PB8/PB9) are
- * unavailable — PB8 is RL's PWMA. Named for the peripheral it actually
+ * unavailable — PB8 is RL's PWMA and PB9 becomes FL AIN1 when battery ADC
+ * support is enabled. Named for the peripheral it actually
  * drives; the drivers' original placeholder comments said hi2c1. */
 I2C_HandleTypeDef hi2c2;
 
@@ -79,16 +84,30 @@ static void motor_gpio_init(void) {
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_AFIO_CLK_ENABLE();
 
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_11 | GPIO_PIN_12,
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 | GPIO_PIN_11 | GPIO_PIN_12
+#ifndef HW_BATTERY_ADC
+                      | GPIO_PIN_4
+#endif
+                      ,
                       GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 | GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 | GPIO_PIN_14 | GPIO_PIN_15
+#ifdef HW_BATTERY_ADC
+                      | GPIO_PIN_9
+#endif
+                      , GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_RESET);
 
-    gpio.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_11 | GPIO_PIN_12;
+    gpio.Pin = GPIO_PIN_5 | GPIO_PIN_11 | GPIO_PIN_12;
+#ifndef HW_BATTERY_ADC
+    gpio.Pin |= GPIO_PIN_4;
+#endif
     gpio.Mode = GPIO_MODE_OUTPUT_PP;
     gpio.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(GPIOA, &gpio);
     gpio.Pin = GPIO_PIN_1 | GPIO_PIN_14 | GPIO_PIN_15;
+#ifdef HW_BATTERY_ADC
+    gpio.Pin |= GPIO_PIN_9;
+#endif
     HAL_GPIO_Init(GPIOB, &gpio);
     gpio.Pin = GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
     HAL_GPIO_Init(GPIOC, &gpio);
@@ -139,7 +158,11 @@ static void drive_hardware_init(void) {
     pwm_channel_config(&htim4, TIM_CHANNEL_3);
 
     /* Direction order is (AIN2, AIN1): positive duty = physical forward. */
+#ifdef HW_BATTERY_ADC
+    motor_set_tim(MOTOR_FL, &htim2, GPIOA, GPIO_PIN_5, GPIOB, GPIO_PIN_9, TIM_CHANNEL_3);
+#else
     motor_set_tim(MOTOR_FL, &htim2, GPIOA, GPIO_PIN_5, GPIOA, GPIO_PIN_4, TIM_CHANNEL_3);
+#endif
     motor_set_tim(MOTOR_FR, &htim3, GPIOA, GPIO_PIN_12, GPIOA, GPIO_PIN_11, TIM_CHANNEL_3);
     motor_set_tim(MOTOR_RL, &htim4, GPIOB, GPIO_PIN_15, GPIOB, GPIO_PIN_1, TIM_CHANNEL_3);
     motor_set_tim(MOTOR_RR, &htim2, GPIOC, GPIO_PIN_14, GPIOC, GPIO_PIN_13, TIM_CHANNEL_4);
@@ -156,6 +179,64 @@ static void dwt_cycle_counter_init(void) {
     DWT->CYCCNT = 0U;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
+
+#ifdef HW_BATTERY_ADC
+/* Minimal polled ADC1 path. The trimmed HAL tree has no ADC implementation;
+ * this follows RM0008 section 11 for a single regular conversion. */
+static bool adc_wait_clear(uint32_t mask, uint32_t timeout_cycles) {
+    uint32_t start = DWT->CYCCNT;
+    while ((ADC1->CR2 & mask) != 0U) {
+        if ((DWT->CYCCNT - start) >= timeout_cycles) return false;
+    }
+    return true;
+}
+
+static void battery_adc_init(void) {
+    GPIO_InitTypeDef gpio = {0};
+    const uint32_t timeout_cycles = SystemCoreClock / 1000U;
+    const uint32_t stabilization_cycles = SystemCoreClock / 1000000U;
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_ADC1_CLK_ENABLE();
+    RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_ADCPRE) | RCC_CFGR_ADCPRE_DIV6;
+
+    gpio.Pin = GPIO_PIN_4;
+    gpio.Mode = GPIO_MODE_ANALOG;
+    gpio.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &gpio);
+
+    ADC1->CR1 = 0U;
+    ADC1->CR2 = ADC_CR2_EXTSEL | ADC_CR2_EXTTRIG;
+    ADC1->SMPR1 = 0U;
+    ADC1->SMPR2 = ADC_SMPR2_SMP4; /* 239.5 ADC cycles */
+    ADC1->SQR1 = 0U;
+    ADC1->SQR2 = 0U;
+    ADC1->SQR3 = 4U;              /* ADC1_IN4 / PA4 */
+    ADC1->CR2 |= ADC_CR2_ADON;
+
+    uint32_t start = DWT->CYCCNT;
+    while ((DWT->CYCCNT - start) < stabilization_cycles) {
+    }
+    ADC1->CR2 |= ADC_CR2_RSTCAL;
+    if (!adc_wait_clear(ADC_CR2_RSTCAL, timeout_cycles)) return;
+    ADC1->CR2 |= ADC_CR2_CAL;
+    if (!adc_wait_clear(ADC_CR2_CAL, timeout_cycles)) return;
+    battery_adc_ready = true;
+}
+
+bool battery_adc_read_raw(uint16_t *raw) {
+    if (!battery_adc_ready || raw == NULL) return false;
+
+    ADC1->SR = 0U;
+    ADC1->CR2 |= ADC_CR2_SWSTART;
+    uint32_t start = DWT->CYCCNT;
+    while ((ADC1->SR & ADC_SR_EOC) == 0U) {
+        if ((DWT->CYCCNT - start) >= (SystemCoreClock / 1000U)) return false;
+    }
+    *raw = (uint16_t)(ADC1->DR & 0x0FFFU);
+    return true;
+}
+#endif
 
 static bool debounce_ok(motor_id_t id) {
     uint32_t now = DWT->CYCCNT;
@@ -387,6 +468,9 @@ int main(void) {
 
     dwt_cycle_counter_init();
     drive_hardware_init();   /* PWM, direction pins, motor bindings */
+#ifdef HW_BATTERY_ADC
+    battery_adc_init();      /* PA4 / ADC1_IN4, 100k/27k battery divider */
+#endif
     encoder_gpio_init();     /* EXTI software quadrature decode */
     /* Create the xTxComplete semaphore BEFORE the UART/DMA NVIC lines are
      * enabled: the Pi may already be streaming at reset, and an ORE before

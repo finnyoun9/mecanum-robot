@@ -77,6 +77,11 @@ jobs:
         gcc -std=c11 -Wall -Wextra -Werror -I firmware/Core/Inc firmware/Core/Test/test_oled_ui.c firmware/Core/Src/oled_ui.c -o /tmp/test_oled_ui
         /tmp/test_oled_ui
 
+    - name: Run battery ADC conversion tests
+      run: |
+        gcc -std=c11 -Wall -Wextra -Werror -I firmware/Core/Inc firmware/Core/Test/test_battery.c firmware/Core/Src/battery.c -o /tmp/test_battery
+        /tmp/test_battery
+
     - name: SIL firmware build + test
       run: |
         mkdir -p firmware/Core/build

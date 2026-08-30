@@ -22,6 +22,9 @@ int main(void) {
         .error_flags = 0x04U,
         .comm_ok = true,
         .emergency_stop = false,
+        .battery_mv = 12150U,
+        .battery_pct = 87U,
+        .battery_valid = true,
         .target_deci_rads = {123, -45, 67, -89},
         .measured_deci_rads = {120, -40, 60, -80},
         .gyro_milli_rads = {12, -45, 678},
@@ -35,6 +38,10 @@ int main(void) {
     assert(memchr(frame, 0x00, sizeof(frame)) != NULL);
 
     data.tof_mm = 1234U;
+    oled_ui_render(frame, 0U, &data);
+    assert(checksum(frame) != initial_sum);
+
+    data.battery_pct = 42U;
     oled_ui_render(frame, 0U, &data);
     assert(checksum(frame) != initial_sum);
 

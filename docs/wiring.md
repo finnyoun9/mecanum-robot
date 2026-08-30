@@ -102,6 +102,7 @@ EXTI 中断线是**按引脚编号**全芯片复用的（不分端口）：PA6�
 |------|------|------|
 | 电机 FL 编码器 A/B | PA0（中断）/ PA1（读电平） | EXTI0，软件正交解码 |
 | 电机 FL PWM | PA2 | TIM2 CH3 |
+| 3S 电池电压采样 | PA4 / ADC1_IN4 | 仅 `BATTERY=1`：电池+ 经 100kΩ 到 PA4，PA4 经 27kΩ 到 GND，并联 100nF 到 GND |
 | 电机 RR PWM | PA3 | TIM2 CH4（借用 TIM2 剩余通道） |
 | 电机 FR 编码器 A/B | PA6（中断）/ PA7（读电平） | EXTI9_5，软件正交解码 |
 | 电机 FR PWM | PB0 | TIM3 CH3 |
@@ -162,13 +163,29 @@ TB6612 每路电机的方向由 **两个输入脚**共同决定（真值表）�
 | GND | 共地 |
 | STBY | PB14（整体使能/急停用） |
 | PWMA | PA2（TIM2_CH3，电机 FL） |
-| AIN1 | PA4（FL 方向） |
+| AIN1 | PA4（现有默认固件）；启用 `BATTERY=1` 后改接 PB9，释放 PA4 给 ADC |
 | AIN2 | PA5（FL 方向，互补） |
 | PWMB | PB0（TIM3_CH3，电机 FR） |
 | BIN1 | PA11（FR 方向） |
 | BIN2 | PA12（FR 方向，互补） |
 | AO1/AO2 | 电机 FL 两端 |
 | BO1/BO2 | 电机 FR 两端 |
+
+### 3S 电池电压检测（可选，`BATTERY=1`）
+
+PA4 是 ADC 输入但当前占用作 FL `AIN1`，因此启用电量显示前必须先把 TB6612 #1 的 `AIN1` 线从 **PA4 改接 PB9**。然后接分压网络：
+
+```text
+电池总线正极 ── 100kΩ（1%）──┬── PA4 / ADC1_IN4
+                              └── 27kΩ（1%）── GND
+PA4 ── 100nF 陶瓷电容 ── GND
+```
+
+- 必须共地；PA4 是非 5V 耐受 ADC 脚，禁止把电池或 5V 直接接入。
+- 满电 12.6V 时 PA4 约 2.68V，低于 3.3V；分压静态耗电约 99µA。
+- 用 `make TARGET=rtos_drive RTOS=1 TOF=1 OLED=1 OLED_CTRL=SH1106 BATTERY=1` 构建。
+- 未改线前不要刷入 `BATTERY=1` 固件；默认构建仍使用 PA4 驱动 FL，不改变现车行为。
+- OLED 同时显示电压和估算百分比。电机负载会拉低端电压，因此百分比只作余量提示，不能替代 3S 低压报警器/BMS。
 
 **TB6612 板 2（RL + RR）**
 

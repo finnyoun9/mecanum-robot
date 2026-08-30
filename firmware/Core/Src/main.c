@@ -22,6 +22,7 @@
 
 /* App */
 #include "robot_control.h"
+#include "battery.h"
 #include "protocol.h"
 #include "ahrs.h"
 #include "mpu6050.h"
@@ -448,6 +449,9 @@ static void oled_render_state(uint8_t page) {
     data.error_flags = state->error_flags;
     data.comm_ok = !state->comm_timeout;
     data.emergency_stop = state->emergency_stop_active;
+    data.battery_mv = state->battery_mv;
+    data.battery_pct = state->battery_pct;
+    data.battery_valid = state->battery_valid;
     data.qw_centi = oled_scaled_i16(state->imu_q[0], 100.0f);
     for (uint8_t i = 0; i < 4U; ++i) {
         data.target_deci_rads[i] = oled_scaled_i16(state->target_w[i], 10.0f);
@@ -471,6 +475,10 @@ void SensorTask(void *pvParameters) {
 #ifdef HW_OLED
     static uint8_t oled_refresh_ticks = 0;
     static bool oled_ok = false;
+#endif
+#ifdef HW_BATTERY_ADC
+    static uint8_t battery_divider = 0;
+    static uint32_t battery_filtered_q3 = 0U;
 #endif
     static bool initialized = false;
     const float xImuDt = 0.010f; /* matches this task's 10ms period */
@@ -510,6 +518,27 @@ void SensorTask(void *pvParameters) {
                              accel_mps2[0], accel_mps2[1], accel_mps2[2],
                              imu_q, xImuDt);
         robot_update_imu(imu_q, gyro_rads);
+
+#ifdef HW_BATTERY_ADC
+        /* 10 Hz sampling with a 1/8 IIR suppresses motor/PWM ripple without
+         * adding another task or any floating-point work. */
+        if (++battery_divider >= 10U) {
+            uint16_t raw;
+            battery_divider = 0U;
+            if (battery_adc_read_raw(&raw)) {
+                if (battery_filtered_q3 == 0U) {
+                    battery_filtered_q3 = (uint32_t)raw << 3U;
+                } else {
+                    battery_filtered_q3 += (uint32_t)raw - (battery_filtered_q3 >> 3U);
+                }
+                uint16_t mv = battery_mv_from_adc(
+                    (uint16_t)((battery_filtered_q3 + 4U) >> 3U));
+                robot_update_battery(mv, battery_percent_from_mv(mv), true);
+            } else {
+                robot_update_battery(0U, 0U, false);
+            }
+        }
+#endif
 
         /* --- ToF read (20 Hz = every 5th iteration / 50ms) ---
          * Compiled out under HW_IMU_ONLY: tof_sensor.c is still a stub whose

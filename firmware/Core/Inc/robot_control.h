@@ -90,6 +90,11 @@ typedef struct {
     float imu_q[4];      /* Quaternion w,x,y,z */
     float imu_gyro[3];   /* rad/s */
 
+    /* 3S battery terminal voltage sampled through PA4/ADC1_IN4. */
+    uint16_t battery_mv;
+    uint8_t  battery_pct;
+    bool     battery_valid;
+
     /* Comms */
     uint8_t  comm_seq_tx;
     bool     comm_timeout;
@@ -175,6 +180,9 @@ void robot_update_imu(const float q[4], const float gyro[3]);
  * distance and are explicitly surfaced to the OLED instead of as 000 mm.
  */
 void robot_update_tof(uint16_t distance_mm, bool valid, bool timed_out);
+
+/** Update the filtered battery reading shown locally and sent in odometry. */
+void robot_update_battery(uint16_t battery_mv, uint8_t battery_pct, bool valid);
 
 /** Trigger emergency stop from ToF/comm timeout */
 void robot_emergency_stop(void);

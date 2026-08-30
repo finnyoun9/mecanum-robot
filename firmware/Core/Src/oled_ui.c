@@ -32,6 +32,7 @@ static const uint8_t *glyph(char c) {
     static const uint8_t dot[5]   = {0x00,0x60,0x60,0x00,0x00};
     static const uint8_t slash[5] = {0x20,0x10,0x08,0x04,0x02};
     static const uint8_t colon[5] = {0x00,0x36,0x36,0x00,0x00};
+    static const uint8_t percent[5] = {0x63,0x13,0x08,0x64,0x63};
     static const uint8_t blank[5] = {0};
     if (c >= '0' && c <= '9') return glyphs[(uint8_t)(c - '0')];
     if (c >= 'A' && c <= 'Z') return glyphs[10U + (uint8_t)(c - 'A')];
@@ -40,6 +41,7 @@ static const uint8_t *glyph(char c) {
     if (c == '.') return dot;
     if (c == '/') return slash;
     if (c == ':') return colon;
+    if (c == '%') return percent;
     return blank;
 }
 
@@ -116,7 +118,15 @@ void oled_ui_render(uint8_t frame[SSD1306_FRAME_BYTES], uint8_t page,
     (void)page;
     memset(frame, 0, SSD1306_FRAME_BYTES);
     /* Header, then the one field a driver must read at a glance. */
-    text_at(frame, 0U, 0U, "TOF RANGE MM");
+    memcpy(line, "TOF RANGE B:", 12U);
+    if (data->battery_valid) {
+        unsigned_dec(&line[12], data->battery_pct, 3U);
+    } else {
+        memcpy(&line[12], "---", 3U);
+    }
+    line[15] = '%';
+    line[16] = '\0';
+    text_at(frame, 0U, 0U, line);
     if (data->tof_valid) {
         unsigned_dec(value, data->tof_mm, 4U);
     } else {
@@ -124,12 +134,21 @@ void oled_ui_render(uint8_t frame[SSD1306_FRAME_BYTES], uint8_t page,
     }
     large_text(frame, 39U, 10U, value);
 
-    line[0] = 'L'; line[1] = 'I'; line[2] = 'N'; line[3] = 'K'; line[4] = ':';
-    line[5] = data->comm_ok ? 'O' : 'X'; line[6] = 'K'; line[7] = ' ';
-    line[8] = data->emergency_stop ? 'S' : 'R'; line[9] = 'U'; line[10] = 'N';
-    line[11] = ' '; line[12] = 'E'; line[13] = ':';
-    line[14] = "0123456789ABCDEF"[data->error_flags >> 4];
-    line[15] = "0123456789ABCDEF"[data->error_flags & 0x0FU]; line[16] = '\0';
+    memcpy(line, "B:--.-V L:XX XXX E:00", 22U);
+    if (data->battery_valid) {
+        uint16_t decivolts = (uint16_t)((data->battery_mv + 50U) / 100U);
+        line[2] = (char)('0' + (decivolts / 100U) % 10U);
+        line[3] = (char)('0' + (decivolts / 10U) % 10U);
+        line[5] = (char)('0' + decivolts % 10U);
+    }
+    line[10] = data->comm_ok ? 'O' : 'X';
+    line[11] = data->comm_ok ? 'K' : 'X';
+    line[13] = data->emergency_stop ? 'S' : 'R';
+    line[14] = data->emergency_stop ? 'T' : 'U';
+    line[15] = data->emergency_stop ? 'P' : 'N';
+    line[19] = "0123456789ABCDEF"[data->error_flags >> 4];
+    line[20] = "0123456789ABCDEF"[data->error_flags & 0x0FU];
+    line[21] = '\0';
     text_at(frame, 0U, 28U, line);
 
     for (uint8_t i = 0; i < 3U; ++i) {

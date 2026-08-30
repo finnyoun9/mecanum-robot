@@ -15,6 +15,9 @@ typedef struct {
     uint8_t error_flags;
     bool comm_ok;
     bool emergency_stop;
+    uint16_t battery_mv;
+    uint8_t battery_pct;
+    bool battery_valid;
     int16_t target_deci_rads[4];
     int16_t measured_deci_rads[4];
     int16_t gyro_milli_rads[3];
