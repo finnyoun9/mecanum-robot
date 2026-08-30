@@ -47,7 +47,7 @@ mecanum_drive_controller:
     kinematics:
       base_frame_offset: { x: 0.0, y: 0.0, theta: 0.0 }
       wheels_radius: 0.030                             # m (60mm measured diameter / 2)
-      sum_of_robot_center_projection_on_X_Y_axis: 0.22  # lx + ly = 0.10 + 0.12
+      sum_of_robot_center_projection_on_X_Y_axis: 0.1525 # lx + ly = 0.0625 + 0.09, measured 2026-08-30
 
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"

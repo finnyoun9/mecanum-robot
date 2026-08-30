@@ -16,8 +16,8 @@
 
 /* Matches mcr.urdf.xacro and the ROS2 hardware interface */
 #define R  0.0325f
-#define LX 0.10f
-#define LY 0.12f
+#define LX 0.0625f
+#define LY 0.09f
 
 static const mecanum_ik_config_t cfg = { .wheel_radius = R, .lx = LX, .ly = LY };
 

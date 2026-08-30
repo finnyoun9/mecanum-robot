@@ -23,8 +23,8 @@ MecanumParams test_params()
 {
   MecanumParams p;
   p.wheel_radius = 0.0325;
-  p.lx = 0.10;
-  p.ly = 0.12;
+  p.lx = 0.0625;
+  p.ly = 0.09;
   return p;
 }
 }  // namespace

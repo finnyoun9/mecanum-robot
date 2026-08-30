@@ -25,12 +25,14 @@
  * landed in encoder.h, the ROS 2 interface and the simulator but not in
  * this file.
  *
- * lx/ly remain ESTIMATES and have never been measured — see
- * mcr_hardware_interface.cpp and the roadmap's M4 section. */
+ * lx/ly MEASURED 2026-08-30: front-rear axle-center distance 0.125 m ->
+ * lx=0.0625; left-right axle-center distance 0.18 m (21 cm outer-edge-to-
+ * outer-edge minus one 3 cm wheel width, not two — the width on both
+ * outer edges is what separates axle-center from outer-edge) -> ly=0.09. */
 static const mecanum_ik_config_t ik_cfg = {
     .wheel_radius = 0.030f,
-    .lx = 0.10f,
-    .ly = 0.12f,
+    .lx = 0.0625f,
+    .ly = 0.09f,
 };
 
 /* Clamp to [-limit, +limit]. */

@@ -27,8 +27,8 @@
   <xacro:property name="wheel_width"    value="0.026"/>   <!-- m -->
   <xacro:property name="wheel_mass"     value="0.05"/>    <!-- kg -->
 
-  <xacro:property name="lx"             value="0.10"/>    <!-- half wheelbase (m) -->
-  <xacro:property name="ly"             value="0.12"/>    <!-- half track width (m) -->
+  <xacro:property name="lx"             value="0.0625"/> <!-- half wheelbase (m), measured 2026-08-30 -->
+  <xacro:property name="ly"             value="0.09"/>   <!-- half track width (m), measured 2026-08-30 -->
 
   <xacro:property name="base_length"    value="0.26"/>    <!-- chassis length -->
   <xacro:property name="base_width"     value="0.22"/>    <!-- chassis width -->
