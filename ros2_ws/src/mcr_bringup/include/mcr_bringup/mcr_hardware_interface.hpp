@@ -122,6 +122,22 @@ private:
    * control rate 100 failures is ~1 s. */
   static constexpr int MAX_CONSECUTIVE_WRITE_FAILURES = 100;
   int consecutive_write_failures_;
+
+  /* --- Command send throttling ---
+   * write() runs every control cycle (100 Hz). Sending on every cycle
+   * unconditionally means the Pi silently outguns any other writer of
+   * the STM32's shared target_w[] -- the NRF24 handset only sends at
+   * 10 Hz, so an idle Pi (nothing publishing to /cmd_vel, command
+   * sitting at zero) permanently stomped the handset's joystick input
+   * back to zero every ~10 ms. Only resend on an actual command change,
+   * or periodically as a keep-alive comfortably under the firmware's
+   * COMM_WATCHDOG_MS (250 ms) so a genuinely held Pi-driven command
+   * (e.g. a steady Nav2 cruise) doesn't itself starve the watchdog. */
+  double last_sent_w_[4];
+  rclcpp::Time last_sent_time_;
+  bool has_sent_once_;
+  static constexpr double COMMAND_CHANGE_EPS = 1e-4;
+  static constexpr double KEEPALIVE_INTERVAL_S = 0.1;
 };
 
 }  // namespace mcr_bringup

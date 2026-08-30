@@ -36,10 +36,14 @@ MCRHardwareInterface::MCRHardwareInterface()
 , odom_x_(0.0), odom_y_(0.0), odom_yaw_(0.0)
 , first_read_(true)
 , consecutive_write_failures_(0)
+, has_sent_once_(false)
 {
   mecanum_params_.wheel_radius = WHEEL_RADIUS_DEFAULT;
   mecanum_params_.lx = LX_DEFAULT;
   mecanum_params_.ly = LY_DEFAULT;
+  for (int i = 0; i < 4; ++i) {
+    last_sent_w_[i] = 0.0;
+  }
 }
 
 MCRHardwareInterface::~MCRHardwareInterface()
@@ -262,7 +266,6 @@ hardware_interface::return_type MCRHardwareInterface::read(
 hardware_interface::return_type MCRHardwareInterface::write(
   const rclcpp::Time & time, const rclcpp::Duration & period)
 {
-  (void)time;
   (void)period;
 
   if (!serial_ || !serial_->is_open()) {
@@ -277,6 +280,28 @@ hardware_interface::return_type MCRHardwareInterface::write(
   float w2 = static_cast<float>(joints_[1].command);
   float w3 = static_cast<float>(joints_[2].command);
   float w4 = static_cast<float>(joints_[3].command);
+
+  /* Only put a frame on the wire when the command actually changed, or a
+   * keep-alive is due. The STM32's target_w[] is shared with the NRF24
+   * handset (see RemoteTask in firmware/Core/Src/main.c) with no
+   * arbitration between the two writers: sending every 10 ms regardless
+   * of whether anything changed meant an idle Pi (nothing publishing to
+   * /cmd_vel, command pinned at zero) silently re-zeroed the handset's
+   * joystick input about ten times for every packet the handset itself
+   * managed to send. KEEPALIVE_INTERVAL_S keeps a genuinely held
+   * Pi-driven command (e.g. a steady Nav2 cruise) alive well inside the
+   * firmware's 250 ms comm watchdog even when nothing changes. */
+  bool changed = !has_sent_once_ ||
+    std::abs(w1 - static_cast<float>(last_sent_w_[0])) > COMMAND_CHANGE_EPS ||
+    std::abs(w2 - static_cast<float>(last_sent_w_[1])) > COMMAND_CHANGE_EPS ||
+    std::abs(w3 - static_cast<float>(last_sent_w_[2])) > COMMAND_CHANGE_EPS ||
+    std::abs(w4 - static_cast<float>(last_sent_w_[3])) > COMMAND_CHANGE_EPS;
+  bool keepalive_due = has_sent_once_ &&
+    (time - last_sent_time_).seconds() >= KEEPALIVE_INTERVAL_S;
+
+  if (!changed && !keepalive_due) {
+    return hardware_interface::return_type::OK;
+  }
 
   if (!serial_->send_velocity_command(w1, w2, w3, w4)) {
     /* Manual throttle: RCLCPP_WARN_THROTTLE needs a persistent clock
@@ -309,6 +334,12 @@ hardware_interface::return_type MCRHardwareInterface::write(
   }
 
   consecutive_write_failures_ = 0;
+  last_sent_w_[0] = w1;
+  last_sent_w_[1] = w2;
+  last_sent_w_[2] = w3;
+  last_sent_w_[3] = w4;
+  last_sent_time_ = time;
+  has_sent_once_ = true;
   return hardware_interface::return_type::OK;
 }
 
