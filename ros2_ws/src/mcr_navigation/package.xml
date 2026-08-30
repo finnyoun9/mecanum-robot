@@ -12,6 +12,9 @@
   <depend>slam_toolbox</depend>
   <depend>rviz2</depend>
 
+  <!-- navigation.launch.py drives slam_toolbox's lifecycle transitions -->
+  <exec_depend>lifecycle_msgs</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

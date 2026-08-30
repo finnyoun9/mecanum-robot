@@ -12,7 +12,7 @@
  *   - USART1 on PA9/PA10 at 921600 bit/s with DMA1 ch4 (TX) / ch5 (RX),
  *     IDLE-line reception into the Core/Src/main.c ring buffer
  *
- * Sensor (I2C) and NRF24 tasks are compiled out with HW_MINIMAL_TASKS.
+ * Sensor (I2C) and NRF24 tasks run in the shared Core/Src application.
  *
  * Safety state at boot: both TB6612 STBY lines are enabled, but motor.c
  * starts latched in emergency stop and the comm watchdog (100 ms deadman)
@@ -27,6 +27,9 @@
 
 #include "motor.h"
 #include "encoder.h"
+#include "mpu6050.h"
+#include "tof_sensor.h"
+#include "ssd1306.h"
 
 #include <stddef.h>
 
@@ -44,6 +47,13 @@ extern void SystemClock_Config(void);
 static TIM_HandleTypeDef htim2;
 static TIM_HandleTypeDef htim3;
 static TIM_HandleTypeDef htim4;
+
+/* I2C2 on PB10/PB11 — MPU6050 (0x68) and, once fitted, VL53L0X (0x29)
+ * share the bus. Not static: mpu6050.c references it by name, matching how
+ * huart1 is shared with Core/Src/main.c. I2C1's pins (PB8/PB9) are
+ * unavailable — PB8 is RL's PWMA. Named for the peripheral it actually
+ * drives; the drivers' original placeholder comments said hi2c1. */
+I2C_HandleTypeDef hi2c2;
 
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef  hdma_usart1_tx;
@@ -298,6 +308,55 @@ static void uart_dma_init(void) {
 }
 
 /* ======================================================================== */
+/*  I2C2 — MPU6050 now, VL53L0X once fitted                                  */
+/* ======================================================================== */
+
+/*
+ * Blocking master mode, no DMA and no interrupts: SensorTask runs at 20 Hz
+ * and a 14-byte burst read at 400 kHz takes ~0.4 ms, so it can afford to
+ * block. Keeping it off the NVIC also keeps it clear of the FreeRTOS
+ * syscall priority ceiling that DMA/UART have to respect above.
+ *
+ * The timeouts passed by the drivers matter more than the speed here: a
+ * missing or unpowered sensor makes every transaction wait out its timeout
+ * inside SensorTask, so the drivers must not use HAL_MAX_DELAY.
+ */
+static void i2c_sensor_init(void) {
+    GPIO_InitTypeDef gpio = {0};
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_I2C2_CLK_ENABLE();
+
+    /* PB10 SCL, PB11 SDA — alternate-function OPEN DRAIN. Push-pull here
+     * would fight the bus pull-ups and break clock stretching / arbitration. */
+    gpio.Pin   = GPIO_PIN_10 | GPIO_PIN_11;
+    gpio.Mode  = GPIO_MODE_AF_OD;
+    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+    gpio.Pull  = GPIO_NOPULL;   /* module breakouts carry their own pull-ups */
+    HAL_GPIO_Init(GPIOB, &gpio);
+
+    hi2c2.Instance             = I2C2;
+    /* 100 kHz is shared safely by the OLED, MPU6050 and VL53L0X on the
+     * chassis' jumper-wire bus; the OLED from the OTA project is specified
+     * and proven at Standard-mode only. */
+    hi2c2.Init.ClockSpeed      = 100000U;
+    hi2c2.Init.DutyCycle       = I2C_DUTYCYCLE_2;
+    hi2c2.Init.OwnAddress1     = 0;
+    hi2c2.Init.AddressingMode  = I2C_ADDRESSINGMODE_7BIT;
+    hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+    hi2c2.Init.OwnAddress2     = 0;
+    hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+    hi2c2.Init.NoStretchMode   = I2C_NOSTRETCH_DISABLE;
+    if (HAL_I2C_Init(&hi2c2) != HAL_OK) Error_Handler();
+
+    /* Hand the bus to the driver rather than having it reference a global
+     * by name — see mpu6050_set_i2c()'s contract. */
+    mpu6050_set_i2c(&hi2c2);
+    tof_sensor_set_i2c(&hi2c2);
+    ssd1306_set_i2c(&hi2c2);
+}
+
+/* ======================================================================== */
 /*  FreeRTOS hooks                                                           */
 /* ======================================================================== */
 
@@ -335,6 +394,7 @@ int main(void) {
      * NULL queue) before the scheduler ever started. */
     comm_create_kernel_objects();
     uart_dma_init();         /* USART1 PA9/PA10 + DMA1 ch4/ch5 */
+    i2c_sensor_init();       /* I2C2 PB10/PB11 — MPU6050 */
     bridges_enable();        /* STBY high; motors still coast until commanded */
 
     firmware_arch_main();    /* robot_init(), tasks, scheduler — never returns */

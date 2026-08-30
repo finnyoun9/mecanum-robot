@@ -19,6 +19,8 @@ set(FIRMWARE_SRC
     Src/pid.c
     Src/remote_control.c
     Src/robot_control.c
+    Src/ssd1306.c
+    Src/oled_ui.c
     Src/tof_sensor.c
 
     # Mock layer
@@ -76,9 +78,30 @@ if(BUILD_TESTING)
     add_executable(test_remote_control Test/test_remote_control.c
                    Src/remote_control.c Src/mecanum_ik.c)
     add_executable(test_encoder       Test/test_encoder.c       Src/encoder.c)
+    # Stall protection: robot_control.c with stubbed motor/encoder drivers,
+    # so a test can hold a wheel at "commanded hard, not turning".
+    add_executable(test_stall         Test/test_stall.c
+                   Src/robot_control.c Src/pid.c
+                   ${CMAKE_CURRENT_SOURCE_DIR}/../../shared/protocol.c)
+    target_include_directories(test_stall PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../shared)
+    # MPU6050 against a fake register file. Pulls in the SIL mock's i2c.h so
+    # the driver compiles against the same I2C_HandleTypeDef the SIL build
+    # uses; the test supplies its own HAL_I2C_Mem_* so it can inject NACKs.
+    add_executable(test_mpu6050       Test/test_mpu6050.c       Src/mpu6050.c)
+    target_include_directories(test_mpu6050 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/SIL/mocks)
+    add_executable(test_tof_sensor     Test/test_tof_sensor.c    Src/tof_sensor.c)
+    target_include_directories(test_tof_sensor PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/SIL/mocks)
+    add_executable(test_ssd1306        Test/test_ssd1306.c       Src/ssd1306.c)
+    target_include_directories(test_ssd1306 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/SIL/mocks)
+    add_executable(test_oled_ui        Test/test_oled_ui.c        Src/oled_ui.c)
 
     foreach(host_test test_pid test_mecanum_ik test_ahrs test_remote_control
-                      test_encoder)
+                      test_encoder test_stall test_mpu6050 test_tof_sensor
+                      test_ssd1306 test_oled_ui)
         target_include_directories(${host_test} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Inc)
         # -UNDEBUG keeps assert() live regardless of CMAKE_BUILD_TYPE.

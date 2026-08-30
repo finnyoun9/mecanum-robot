@@ -111,6 +111,12 @@ int HAL_I2C_Mem_Write(I2C_HandleTypeDef *hi2c, uint16_t dev_addr, uint16_t mem_a
     return 0;
 }
 
+int HAL_I2C_Master_Transmit(I2C_HandleTypeDef *hi2c, uint16_t dev_addr,
+                            uint8_t *data, uint16_t size, uint32_t timeout) {
+    (void)hi2c; (void)dev_addr; (void)data; (void)size; (void)timeout;
+    return HAL_OK;
+}
+
 /* ========================================================================
  *  System
  * ======================================================================== */

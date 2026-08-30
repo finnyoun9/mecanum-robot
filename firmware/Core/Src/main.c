@@ -26,6 +26,8 @@
 #include "ahrs.h"
 #include "mpu6050.h"
 #include "tof_sensor.h"
+#include "ssd1306.h"
+#include "oled_ui.h"
 #include "nrf24l01.h"
 #include "remote_control.h"
 
@@ -36,10 +38,10 @@
 /* --- Task handles --- */
 static TaskHandle_t hCtrlTask    = NULL;
 static TaskHandle_t hCommTask    = NULL;
-#ifndef HW_MINIMAL_TASKS
+#ifndef HW_NO_SENSOR_TASK
 static TaskHandle_t hSensorTask  = NULL;
-static TaskHandle_t hRemoteTask  = NULL;
 #endif
+static TaskHandle_t hRemoteTask  = NULL;
 static TaskHandle_t hMonitorTask = NULL;
 
 /* --- Queues --- */
@@ -90,7 +92,10 @@ void comm_rx_dma_resync(void) {
 void sil_uart_rx_feed(const uint8_t *data, uint8_t len) {
     for (uint8_t i = 0; i < len; i++) {
         uint16_t next = (uint16_t)((rx_head + 1) % RX_RING_SIZE);
-        if (next == rx_tail) break; /* ring full */
+        if (next == rx_tail) {
+            rx_overflows++;
+            continue; /* ring full: account for every dropped byte */
+        }
         rx_ring[rx_head] = data[i];
         rx_head = next;
     }
@@ -420,11 +425,53 @@ void CtrlTask(void *pvParameters) {
 /*  SensorTask: ToF + IMU at respective rates                                */
 /* ======================================================================== */
 
+#ifdef HW_OLED
+static uint8_t oled_frame[SSD1306_FRAME_BYTES];
+
+/* SensorTask samples ToF every 50 ms. A 1 Hz dashboard refresh is readable
+ * and keeps I2C traffic comfortably below the sensor workload. */
+#define OLED_REFRESH_TICKS 20U
+
+static int16_t oled_scaled_i16(float value, float scale) {
+    float scaled = value * scale;
+    if (scaled > 32767.0f) return INT16_MAX;
+    if (scaled < -32768.0f) return INT16_MIN;
+    return (int16_t)scaled;
+}
+
+static void oled_render_state(uint8_t page) {
+    const robot_state_t *state = robot_get_state();
+    oled_ui_data_t data = {0};
+
+    data.tof_mm = state->tof_distance_mm;
+    data.tof_valid = state->tof_valid;
+    data.error_flags = state->error_flags;
+    data.comm_ok = !state->comm_timeout;
+    data.emergency_stop = state->emergency_stop_active;
+    data.qw_centi = oled_scaled_i16(state->imu_q[0], 100.0f);
+    for (uint8_t i = 0; i < 4U; ++i) {
+        data.target_deci_rads[i] = oled_scaled_i16(state->target_w[i], 10.0f);
+        data.measured_deci_rads[i] = oled_scaled_i16(state->measured_w[i], 10.0f);
+    }
+    for (uint8_t i = 0; i < 3U; ++i) {
+        data.gyro_milli_rads[i] = oled_scaled_i16(state->imu_gyro[i], 1000.0f);
+    }
+    oled_ui_render(oled_frame, page, &data);
+}
+#endif
+
 void SensorTask(void *pvParameters) {
     (void)pvParameters;
 
     static float imu_q[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+#ifndef HW_IMU_ONLY
     static uint8_t tof_divider = 0;
+    static bool tof_ready = false;
+#endif
+#ifdef HW_OLED
+    static uint8_t oled_refresh_ticks = 0;
+    static bool oled_ok = false;
+#endif
     static bool initialized = false;
     const float xImuDt = 0.010f; /* matches this task's 10ms period */
 
@@ -437,7 +484,16 @@ void SensorTask(void *pvParameters) {
         xLastWakeTime = xTaskGetTickCount();
 #endif
         mpu6050_init();
-        tof_init();
+#ifndef HW_IMU_ONLY
+        tof_ready = tof_init();
+#endif
+#ifdef HW_OLED
+        oled_ok = ssd1306_init();
+        if (oled_ok) {
+            oled_render_state(0U);
+            oled_ok = ssd1306_write_frame(oled_frame, sizeof(oled_frame));
+        }
+#endif
         initialized = true;
     }
 
@@ -455,13 +511,35 @@ void SensorTask(void *pvParameters) {
                              imu_q, xImuDt);
         robot_update_imu(imu_q, gyro_rads);
 
-        /* --- ToF read (20 Hz = every 5th iteration / 50ms) --- */
+        /* --- ToF read (20 Hz = every 5th iteration / 50ms) ---
+         * Compiled out under HW_IMU_ONLY: tof_sensor.c is still a stub whose
+         * every read times out, which would pin ERR_TOF_TIMEOUT in the
+         * odometry error_flags the Pi sees and make a real fault
+         * indistinguishable from the placeholder. Drop the guard once the
+         * VL53L0X is wired and its I2C calls are live. */
+#ifndef HW_IMU_ONLY
         if (++tof_divider >= 5) {
             tof_divider = 0;
-            tof_status_t tof_status;
-            uint16_t tof_mm = tof_read_mm(&tof_status);
-            robot_update_tof(tof_mm, tof_status == TOF_TIMEOUT);
+            if (tof_ready) {
+                tof_status_t tof_status;
+                uint16_t tof_mm = tof_read_mm(&tof_status);
+                robot_update_tof(tof_mm, tof_status == TOF_OK,
+                                 tof_status == TOF_TIMEOUT);
+            } else {
+                /* A failed identification/initialisation is not a 0 mm hit. */
+                robot_update_tof(0U, false, true);
+            }
+#ifdef HW_OLED
+            if (oled_ok) {
+                if (++oled_refresh_ticks >= OLED_REFRESH_TICKS) {
+                    oled_refresh_ticks = 0;
+                    oled_render_state(0U);
+                    oled_ok = ssd1306_write_frame(oled_frame, sizeof(oled_frame));
+                }
+            }
+#endif
         }
+#endif
 
 #ifndef SIL_BUILD
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(10));
@@ -584,14 +662,14 @@ int firmware_arch_main(void) {
     /* --- Create tasks --- */
     xTaskCreate(CtrlTask,    "Ctrl",   512, NULL, 4, &hCtrlTask);
     xTaskCreate(CommTask,    "Comm",   512, NULL, 3, &hCommTask);
-#ifndef HW_MINIMAL_TASKS
-    /* I2C sensors (MPU6050/VL53L0X) and the NRF24 link are not wired into
-     * the RTOS drive target yet — their tasks are created only in builds
-     * with the full peripheral set. The task functions stay compiled so
-     * the SIL build and future hardware targets are unaffected. */
+#ifndef HW_NO_SENSOR_TASK
+    /* I2C sensors. Under HW_IMU_ONLY this reads the MPU6050 and runs the
+     * Mahony filter; the ToF half stays compiled out until the VL53L0X is
+     * wired (see the ToF block in SensorTask). */
     xTaskCreate(SensorTask,  "Sensor", 256, NULL, 2, &hSensorTask);
-    xTaskCreate(RemoteTask,  "Remote", 256, NULL, 2, &hRemoteTask);
 #endif
+    /* Poll the car-side NRF24 receiver and apply valid handset commands. */
+    xTaskCreate(RemoteTask,  "Remote", 256, NULL, 2, &hRemoteTask);
     xTaskCreate(MonitorTask, "Monitor",128, NULL, 1, &hMonitorTask);
 
     /* --- Start scheduler (never returns) --- */

@@ -48,9 +48,26 @@
 #define MPU6050_STANDARD_GRAVITY      9.80665f      /* m/s^2 */
 
 /**
+ * @brief Bind the I2C bus handle this driver transacts on.
+ *
+ * Must be called before mpu6050_init(). Injected rather than referenced by
+ * name (the motor.c/motor_set_tim pattern) so the driver carries no
+ * assumption about which I2C peripheral it sits on: the hardware target
+ * passes I2C2 (PB10/PB11 — PB8, I2C1's SCL, is RL's PWMA), while SIL and
+ * unit tests pass a mock. Until it is called every transaction fails
+ * closed rather than dereferencing NULL.
+ *
+ * @param hi2c Pointer to an I2C_HandleTypeDef (void* to keep this header
+ *             free of any HAL dependency, as motor.h does for timers).
+ */
+void mpu6050_set_i2c(void *hi2c);
+
+/**
  * @brief Initialise the MPU6050: verify WHO_AM_I, wake from sleep, select
  *        PLL clock source, configure DLPF/sample rate and full-scale ranges.
- * @return true if WHO_AM_I matched the expected value.
+ * @return true if WHO_AM_I matched and every configuration write succeeded.
+ *         false on any I2C failure, on an unexpected WHO_AM_I, or if no bus
+ *         has been injected.
  */
 bool mpu6050_init(void);
 

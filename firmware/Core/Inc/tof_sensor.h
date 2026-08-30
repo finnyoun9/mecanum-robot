@@ -1,41 +1,38 @@
 /**
  * @file tof_sensor.h
- * @brief I2C driver for VL53L0X time-of-flight distance sensor.
- *
- * VL53L0X chosen as the cheapest/most common I2C ToF module (matches the
- * "ToF" line item in the project's purchase plan). Uses the sensor's
- * default single-shot ranging mode — the full ST API reference sequence
- * (SPAD calibration, VHV/phase calibration, timing budget tuning) is
- * omitted since it doesn't affect the read/status logic below; factory
- * default calibration is adequate for obstacle-distance sensing.
+ * @brief Compact VL53L0X I2C driver for obstacle ranging.
  */
 
 #ifndef TOF_SENSOR_H
 #define TOF_SENSOR_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
-/** Result of a ranging read */
+#define TOF_I2C_ADDR 0x29U
+
 typedef enum {
-    TOF_OK = 0,          /* Valid range in tof_read_mm()'s return value */
-    TOF_OUT_OF_RANGE,    /* Sensor responded but reading is invalid/out of range */
-    TOF_TIMEOUT,         /* Sensor stopped responding (consecutive read failures) */
+    TOF_OK = 0,
+    TOF_OUT_OF_RANGE,
+    TOF_NO_SAMPLE,
+    TOF_TIMEOUT,
 } tof_status_t;
 
-/**
- * @brief Initialise the VL53L0X: verify model ID, start continuous
- *        single-shot ranging mode.
- * @return true if the model ID matched.
- */
-bool tof_init(void);
+/** Bind the I2C bus used by the sensor. Must precede tof_init(). */
+void tof_sensor_set_i2c(void *hi2c);
 
 /**
- * @brief Trigger a range measurement and read the result.
- * @param status  Optional output: TOF_OK / TOF_OUT_OF_RANGE / TOF_TIMEOUT.
- *                Pass NULL if not needed.
- * @return Distance in mm. On TOF_OUT_OF_RANGE/TOF_TIMEOUT, returns the last
- *         known-good reading rather than a bogus 0.
+ * Verify identity, load ST tuning/SPAD calibration and start continuous range.
+ * Returns false on an absent/wrong device, I2C error or calibration timeout.
+ */
+bool tof_init(void);
+/** Last completed init stage (0 before identity check, 8 ready). */
+uint8_t tof_init_stage(void);
+
+/**
+ * Read the latest continuous-ranging result without blocking for a new sample.
+ * A missing sample is TOF_NO_SAMPLE and becomes TOF_TIMEOUT after three
+ * consecutive 20 Hz polls. Errors retain and return the last known-good range.
  */
 uint16_t tof_read_mm(tof_status_t *status);
 

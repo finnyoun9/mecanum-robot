@@ -109,7 +109,7 @@ EXTI 中断线是**按引脚编号**全芯片复用的（不分端口）：PA6�
 | 电机 RL PWM | PB8 | TIM4 CH3 |
 | 电机 RR 编码器 A/B | PB12（中断）/ PB13（读电平） | EXTI15_10，软件正交解码 |
 | USART1（树莓派通信） | PA9 (TX) / PA10 (RX) | 默认位置，不 remap |
-| I2C2（MPU6050） | PB10 (SCL) / PB11 (SDA) | **用 I2C2 不用 I2C1**——I2C1 默认脚是 PB6/PB7，和 RL 编码器撞车 |
+| I2C2 传感器总线 | PB10 (SCL) / PB11 (SDA) | MPU6050 0x68 + VL53L0X 0x29；可并联 SSD1306 0x3C。**不用 I2C1**——PB6/PB7 和 RL 编码器撞车 |
 | NRF24L01 | PA8 (CE) / PA15 (CSN) / PB3 (SCK) / PB4 (MISO) / PB5 (MOSI) | 位翻转软件 SPI，见下方"NRF24L01 无线遥控接线"章节 |
 | SWD 调试（ST-Link） | PA13 / PA14 | 保留别占，后面还要烧录/调试 |
 
@@ -373,7 +373,10 @@ TB6612 有两组电源引脚，设计上已隔离电机噪声：
 - [ ] 在 Pi 上运行 `ls -l /dev/serial0 /dev/ttyAMA0`，确认 `/dev/serial0` 指向排针 UART；它不是热插拔 USB 设备，不以 `dmesg` 枚举为验收依据
 - [ ] 运行串口监听工具（如 `picocom -b 921600 /dev/ttyAMA0`），波特率与 STM32 固件保持一致
 - [ ] 在 STM32 上发送心跳包（HEARTBEAT 帧，CMD_ID = 0x1F），验证 Pi 接收
-- [ ] 确认 I2C 总线正常：`i2cdetect -y 1` 应显示 MPU6050 (0x68) 和 VL53L0X (0x29)
+- [ ] 这条 I2C2 在 STM32 上，Pi 的 `i2cdetect` 看不到。MPU6050 用
+  `python3 tools/imu_watch.py` 验收；接好 VL53L0X 后烧录 `TOF=1` target，运行
+  `python3 tools/tof_watch.py`，应看到非零距离且无 `TOF_TIMEOUT`。
+  SSD1306 接好后用 `TOF=1 OLED=1` 构建，屏幕会显示一页式 ToF、四轮速度和 IMU 仪表盘。
 
 ### 第四步：依次连接电机，空转测试
 

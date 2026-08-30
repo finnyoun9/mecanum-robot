@@ -81,6 +81,8 @@ class Parser:
         self.other = 0
         self.odom_times = deque(maxlen=200)
         self.last_odom_qw = None
+        self.last_tof_mm = None
+        self.last_error_flags = None
 
     def push(self, b: int):
         if self.state == "SYNC0":
@@ -127,6 +129,9 @@ class Parser:
             # odom_feedback_t: int32[4] + u16 + float q[4] ...
             if len(payload) >= 22:
                 self.last_odom_qw = struct.unpack_from("<f", payload, 18)[0]
+            if len(payload) >= 48:
+                self.last_tof_mm = struct.unpack_from("<H", payload, 16)[0]
+                self.last_error_flags = payload[47]
         elif cmd == CMD_ACK:
             self.acks += 1
         else:

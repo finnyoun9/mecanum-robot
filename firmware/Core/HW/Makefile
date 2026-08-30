@@ -19,6 +19,7 @@ TARGET ?= bringup
 EXTRA_SRCS ?=
 OPENOCD ?= openocd
 OPENOCD_CONFIG = stlink_stm32f1.cfg
+STFLASH ?= st-flash
 
 ROOT       = ..
 DRIVERS    = $(ROOT)/Drivers
@@ -34,7 +35,15 @@ CFLAGS += -I. -I$(ROOT)/Inc -I$(CMSIS_INC) -I$(CMSIS_DEV) -I$(HAL_INC)
 CFLAGS += -I$(ROOT)/../../shared
 
 LDFLAGS  = -mcpu=cortex-m3 -mthumb -T STM32F103XB_FLASH.ld
-LDFLAGS += -Wl,--gc-sections -nostartfiles -specs=nosys.specs -lc -lm
+LDFLAGS += -Wl,--gc-sections -nostartfiles -specs=nosys.specs
+
+# Libraries must follow the objects on the link line, not precede them: ld
+# resolves left to right, so -lc -lm placed in LDFLAGS (which comes first)
+# were scanned before any undefined symbol existed and then never revisited.
+# This only surfaced when SensorTask started referencing ahrs.c and pulled
+# in sqrtf -> __errno; before that --gc-sections dropped the whole AHRS
+# section and nothing needed libm.
+LDLIBS = -lc -lm
 
 C_SRCS  = $(TARGET)_main.c system_clock_config.c
 C_SRCS += $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx/system_stm32f1xx.c
@@ -49,10 +58,21 @@ FREERTOS = $(ROOT)/Middleware/FreeRTOS/Source
 C_SRCS += stm32f1xx_it_rtos.c
 # Application (Core/Src) + shared protocol
 C_SRCS += main.c robot_control.c motor.c encoder.c pid.c mecanum_ik.c ahrs.c \
-          mpu6050.c tof_sensor.c nrf24l01.c remote_control.c protocol.c
+          mpu6050.c tof_sensor.c ssd1306.c oled_ui.c nrf24l01.c remote_control.c protocol.c
 # FreeRTOS kernel (ARM_CM3 port, heap_4 dynamic allocation)
 C_SRCS += tasks.c queue.c list.c timers.c port.c heap_4.c
-CFLAGS += -I fwinc -DHW_MINIMAL_TASKS
+CFLAGS += -I fwinc
+ifneq ($(TOF),1)
+# Keep an unfitted VL53L0X from presenting as a permanent fault. Build with
+# TOF=1 once the module is wired to the shared PB10/PB11 bus.
+CFLAGS += -DHW_IMU_ONLY
+endif
+ifeq ($(OLED),1)
+CFLAGS += -DHW_OLED
+endif
+ifeq ($(OLED_CTRL),SH1106)
+CFLAGS += -DHW_OLED_SH1106
+endif
 CFLAGS += -I$(FREERTOS)/include -I$(FREERTOS)/portable/GCC/ARM_CM3
 else
 # --- Bare-metal bring-up targets (no FreeRTOS) ---
@@ -67,12 +87,12 @@ vpath %.c . $(ROOT)/Src $(ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx $(HAL_SRC) \
     $(ROOT)/../../shared $(FREERTOS) $(FREERTOS)/portable/GCC/ARM_CM3 \
     $(FREERTOS)/portable/MemMang
 
-.PHONY: all clean flash debug-server
+.PHONY: all clean flash flash-stlink debug-server
 
 all: $(TARGET).bin
 
 $(TARGET).elf: $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 	$(SIZE) $@
 
 $(TARGET).bin: $(TARGET).elf
@@ -86,6 +106,11 @@ $(TARGET).bin: $(TARGET).elf
 
 flash: $(TARGET).bin
 	$(OPENOCD) -f $(OPENOCD_CONFIG) -c "program $(TARGET).elf verify reset exit"
+
+# Some older ST-Link V2 probes report SWD IDCODE 0x1ba01477, which OpenOCD
+# 0.12 rejects while stlink's own flash loader handles and verifies correctly.
+flash-stlink: $(TARGET).bin
+	$(STFLASH) --reset write $(TARGET).bin 0x08000000
 
 debug-server:
 	$(OPENOCD) -f $(OPENOCD_CONFIG)

@@ -27,7 +27,7 @@ The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**.
 - **URDF 模型** ✅ — 4 麦克纳姆轮 + 传感器模型,已通过 xacro 展开并在 RViz2 中渲染(见下方截图)
 - **串口二进制协议** ✅ — 自定义协议 + CRC16-MODBUS 校验,Pi 与 STM32 共享的 C 库
 - **麦克纳姆轮运动学** ✅ — 正/逆运动学解算 + 单元测试(gtest,固件内也有 C 版)
-- **NRF24L01 无线遥控** ⚠️ — 实物收发、K1/K9、250 ms 失联停车和低速全向控制曾完成真机验收；旧 Blue Pill 已因复位节点异常换新板（SWD/烧录已验），车端 NRF24L01+ 模块电源短路已下线、新模块 SPI 回读仍未建立，待更换/复验(见 [docs/remote_control.md](docs/remote_control.md))
+- **NRF24L01 无线遥控** ⚠️ — 实物收发、K1/K9、250 ms 失联停车和低速全向控制曾完成真机验收；替换 Blue Pill 与新车端 NRF24L01+ 已通过 SWD/烧录和 SPI `STATUS=0x0E` 健康检查，待手柄开机后的 Auto-ACK 与实际收包复验（见 [docs/remote_control.md](docs/remote_control.md)）
 - **ROS2 协议闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → STM32 UART 模拟器全链路打通；0.3 m/s 指令在协议模拟中得到 0.302 m/s 里程计，尚不是真实底盘结果
 - **STM32 速度闭环** ✅ — 单轮 PI 和独立四轮闭环目标已完成空载与低速落地基础验收；完整 `firmware_arch_main()` 的 UART/I2C MSP 和长期带载测试仍未完成
 - **四轮开环真机控制** ✅ — 四个电机经 TB6612 已完成 6 V 空载正反转与方向一致性验证；正式供电方案见 [docs/power-system.md](docs/power-system.md)
@@ -36,7 +36,7 @@ The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**.
 - **IMX219 + YOLOv8n** ✅ — CSI 相机 640×480 连续采集超过 30 FPS；Pi 5 CPU 上 ONNX Runtime 实测约 6 FPS，显示器/人体目标可识别；当前为独立验证，尚未封装成 ROS 2 节点
 - **Nav2 + SLAM** 🚧 — 配置骨架已就位，LD06 `/scan` 已独立验证，待接入 bringup 并与真实里程计、TF 联调
 
-> 当前最重要的缺口是 **M4：闭合 Pi↔STM32 真机 UART/里程计链路**——`rtos_drive` FreeRTOS 目标已上板，洪流测试暴露双向帧错误（波特率/电气层待查，Pi 侧已实测排除）和错误风暴下的 lockup（待复现取证）；车端 NRF24 模块仍待更换。具体证据边界见 [项目状态](docs/project-status.md)。
+> 当前最重要的缺口是 **M4：闭合 Pi↔STM32 真机 UART/里程计链路**——`rtos_drive` FreeRTOS 目标已上板，洪流测试暴露双向帧错误（波特率/电气层待查，Pi 侧已实测排除）和错误风暴下的 lockup（待复现取证）；车端新 NRF24 已通过 SPI 健康检查，待空口收包复验。具体证据边界见 [项目状态](docs/project-status.md)。
 
 > 后续开发请先读 [docs/project-status.md](docs/project-status.md)，从当前 M4/Pi 侧集成缺口继续推进，不要把 SIL、协议模拟器或独立传感器测试写成整车闭环结果。
 
@@ -125,7 +125,7 @@ mecanum-robot/
 | 电机驱动 Driver | TB6612FNG 双路 H 桥 | 2 |
 | 激光雷达 LiDAR | LD06 360° + CH340 USB-TTL | 1 |
 | IMU | MPU6050 | 1 |
-| ToF 测距 | VL53L0X / VL53L1X | 1 |
+| ToF 测距 | VL53L0X（当前驱动不兼容 VL53L1X） | 1 |
 | 相机 Camera | IMX219 8MP (CSI 排线) | 1 |
 | 无线遥控 Remote | NRF24L01+ 收发模块 + 江协科技手柄 | 2 |
 | 电源 Power | 3S 锂电池 + 降压模块 | 1 套 |
@@ -179,15 +179,18 @@ pip install opencv-python numpy open3d onnxruntime
 # 相机标定
 python perception/camera/calibration.py
 
-# YOLO 目标检测
-python perception/detection/yolo_detect.py
+# YOLO 目标检测（Pi CSI，headless 烟雾测试）
+python3 perception/detection/yolo_detect.py --camera csi --max-frames 20
+
+# 在 ROS Docker 中启动检测桥接；另一个 Pi 宿主机终端执行带 --ros-udp-port 的 YOLO 命令
+ros2 launch mcr_perception perception_bridge.launch.py
 
 # 激光三角法 3D 扫描
 cd perception/laser_triangulation
 python point_cloud_scanner.py
 ```
 
-> 当前 `yolo_detect.py` 仍是通用 OpenCV `VideoCapture`/桌面显示版本；IMX219 真机验证使用宿主机 `Picamera2 + ONNX Runtime`，正式 CSI/headless 入口尚待合入，不能直接把上面的命令当作 Pi 5 已验收启动方式。
+> `yolo_detect.py` 默认走 IMX219 的 `Picamera2` CSI 入口，适合无桌面的 Pi 宿主机；ROS 2 通过本机 UDP 桥接发布检测结果，详见 [perception/detection/README.md](perception/detection/README.md)。USB 摄像头使用 `--camera usb --device 0`，仅在有桌面时添加 `--display`。
 
 ## Key Skills / 核心技术展示
 

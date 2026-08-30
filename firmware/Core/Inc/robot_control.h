@@ -17,19 +17,51 @@
 #define CTRL_LOOP_HZ     100   /* Motor PID loop frequency */
 #define ODOM_PUBLISH_HZ  50    /* Odometry update frequency */
 #define TOF_READ_HZ      20    /* ToF read frequency */
-#define COMM_WATCHDOG_MS 100   /* Communication timeout */
+#define COMM_WATCHDOG_MS 250   /* Handset sends at 100 ms; allow poll jitter */
 
 /* --- Default PID gains (tuned per motor, these are starting points) ---
  * Speed loop starts as pure PI (Kd = 0) per the closed-loop roadmap:
  * tune Kp, then Ki on the real chassis first, add D only if needed. */
-#define PID_KP_DEFAULT   2.5f
-#define PID_KI_DEFAULT   0.8f
+/* M3 four-wheel handset gains. The measured inverse plant supplies the
+ * feed-forward effort in robot_control.c; PI only corrects tracking error.
+ * Pi control may replace these through CMD_PID_TUNE. */
+#define PID_KP_DEFAULT   15.0f
+#define PID_KI_DEFAULT   35.0f
 #define PID_KD_DEFAULT   0.0f
 #define PID_OUT_MAX      1000.0f   /* PWM range */
-#define PID_INTEGRAL_MAX 300.0f
+#define PID_CORRECTION_MAX 350.0f
+#define PID_INTEGRAL_MAX (PID_CORRECTION_MAX / PID_KI_DEFAULT)
 
 /* --- ToF emergency threshold --- */
 #define TOF_EMERGENCY_MM 100  /* Brake if obstacle < 10 cm */
+
+/* --- Stall protection ---
+ * A wheel commanded hard but not turning is either jammed, disconnected or
+ * a dead motor. With no detection the PI integral winds to PID_INTEGRAL_MAX
+ * and pins the output at full duty into a stationary motor: JGA25-370 stall
+ * current is ~5-8x its no-load draw and the 3S pack has no current limit,
+ * which is enough to cook the windings.
+ *
+ * Thresholds come from the 2026-08-29 open-loop measurements and the duty
+ * sweep in docs/hardware-closed-loop-roadmap.md. The duty floor sits above
+ * the measured 5-10% start deadzone (5% = 50: no rotation at all; 10% = 100:
+ * 0.32 rev/s = 2.0 rad/s), so a healthy motor driven at 150 always turns
+ * comfortably faster than STALL_SPEED_MAX. The failed RR motor, by
+ * contrast, managed 0.49 rad/s at 80% duty.
+ *
+ * 150 rather than something higher because the duty a stall can reach
+ * depends on the gains in force: with the PID_*_DEFAULT placeholders below
+ * the output saturates at Kp*err + Ki*integral_max = 260 and can never
+ * exceed it, so a higher floor would silently disable this protection
+ * while still pushing 26% duty into a stationary motor. The M2-validated
+ * gains the Pi actually sends (Kp=100/Ki=300) saturate at 1000 instead.
+ *
+ * The 500 ms window is deliberately longer than the worst-case startup
+ * transient: a stopped wheel accelerating past 1.0 rad/s takes well under
+ * 100 ms at the real gains, so a genuine start never trips this. */
+#define STALL_DUTY_MIN     150.0f  /* |output| above this counts as "driven hard" */
+#define STALL_SPEED_MAX    1.0f    /* rad/s below this counts as "not turning" */
+#define STALL_TRIP_MS      500     /* sustained duration before tripping */
 
 /* --- Robot state --- */
 typedef struct {
@@ -44,6 +76,7 @@ typedef struct {
 
     /* ToF */
     uint16_t tof_distance_mm;
+    bool     tof_valid;
     bool     tof_emergency;
 
     /* IMU */
@@ -62,6 +95,14 @@ typedef struct {
 
     /* Error flags */
     uint8_t error_flags;
+
+    /* Stall detection: per-wheel accumulated time (ms) spent driven hard
+     * while not turning. Reset as soon as the wheel moves or the command
+     * backs off; trips ERR_MOTOR_FAULT at STALL_TRIP_MS. */
+    uint32_t stall_ms[MOTOR_COUNT];
+    /* Bitmask of wheels latched as stalled (bit i = motor i). Latched
+     * wheels stay at zero duty until robot_emergency_clear(). */
+    uint8_t  stalled_mask;
 
     /* Overall state */
     bool emergency_stop_active;
@@ -99,17 +140,24 @@ const robot_state_t* robot_get_state(void);
 void robot_update_imu(const float q[4], const float gyro[3]);
 
 /**
- * @brief Update ToF distance reading. Sets/clears ERR_TOF_TIMEOUT in
- * error_flags. On timeout the last known-good distance is kept rather
- * than overwritten, so robot_ctrl_loop's emergency-stop check doesn't see
- * a bogus 0.
+ * @brief Update ToF status. Invalid samples never overwrite the last valid
+ * distance and are explicitly surfaced to the OLED instead of as 000 mm.
  */
-void robot_update_tof(uint16_t distance_mm, bool timed_out);
+void robot_update_tof(uint16_t distance_mm, bool valid, bool timed_out);
 
 /** Trigger emergency stop from ToF/comm timeout */
 void robot_emergency_stop(void);
 
 /** Clear emergency stop */
+/** Clear a latched emergency stop (ToF / comm watchdog / boot).
+ *  Does NOT release a latched motor fault — see robot_clear_motor_fault(). */
 void robot_emergency_clear(void);
+
+/** Release wheels latched by stall detection. Deliberately separate from
+ *  robot_emergency_clear(): the deadman recovery path calls that on every
+ *  fresh motion command, which would otherwise re-drive a dead motor a
+ *  few hundred ms after every comm blip. Call this only after the
+ *  mechanical or electrical cause has actually been dealt with. */
+void robot_clear_motor_fault(void);
 
 #endif /* ROBOT_CONTROL_H */
