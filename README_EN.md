@@ -96,44 +96,51 @@ flowchart TB
 
 ## Technical Map
 
-A subsystem-grouped index of the technical topics in this project; theory, code location, and rationale for each node are in [Technical Map details](docs/technical-map.md).
+The technical map stays a one-page index. Detailed theory, design tradeoffs, implementation entry points, and evidence boundaries live in six topic pages — see [Technical Map details](docs/technical-map.md).
 
 ```mermaid
 flowchart TB
     ROOT((MCR Technical Map))
 
+    subgraph ARCH[System Architecture]
+        A1[Pi 5 + STM32 layering]
+        A2[Command and feedback loops]
+    end
+
     subgraph RT[Real-time Control]
-        RT1[FreeRTOS 5-task scheduling]
-        RT2[PID / PI velocity loop]
-        RT3[Timer PWM + EXTI encoder]
-        RT4[Mecanum kinematics]
+        R1[FreeRTOS + feedforward PI]
+        R2[PWM + EXTI encoder]
+        R3[Mecanum kinematics]
     end
 
-    subgraph COMM[Communication Link]
+    subgraph COMM[Communication]
         C1[UART protocol + CRC16]
-        C2[DMA + ring buffer]
-        C3[I2C bus]
-        C4[SPI + NRF24 wireless]
+        C2[DMA staging + software ring]
+        C3[NRF24 wireless]
     end
 
-    subgraph SENSE[Perception & State Estimation]
-        S1[Mahony attitude filter]
-        S2[ToF ranging]
-        S3[EKF state estimation]
-        S4[LD06 SLAM mapping]
+    subgraph SENSE[Sensing & Localization]
+        S1[I2C / IMU / ToF]
+        S2[Odometry + EKF]
+        S3[LD06 + SLAM]
     end
 
-    subgraph SYS[System & Verification]
-        Y1[SIL software-in-the-loop]
-        Y2[GitHub Actions CI]
-        Y3[Safety state machine / arbitration]
-        Y4[Power + ADC divider]
+    subgraph SAFE[Safety & Reliability]
+        F1[E-stop / link loss / stall]
+        F2[Control-authority lease]
     end
 
+    subgraph VERIFY[Verification]
+        V1[CTest / SIL / CI]
+        V2[Probe / hardware / system]
+    end
+
+    ROOT --> ARCH
     ROOT --> RT
     ROOT --> COMM
     ROOT --> SENSE
-    ROOT --> SYS
+    ROOT --> SAFE
+    ROOT --> VERIFY
 ```
 
 ## Measured Evidence
@@ -262,7 +269,7 @@ Shortest path forward: **gyro bias calibration → EKF validation → remapping 
 | Document | Scope |
 | --- | --- |
 | [Project status](docs/project-status.md) | Latest progress, hardware evidence, blockers, next steps |
-| [Technical map](docs/technical-map.md) | Subsystem-grouped topics: theory, code location, rationale |
+| [Technical map](docs/technical-map.md) | Navigation to six technical topics, implementation entry points, and evidence boundaries |
 | [Wiring guide](docs/wiring.md) | STM32, TB6612, encoder, I2C, and NRF24 pinout |
 | [Power system](docs/power-system.md) | 3S battery tree, protection, and failure records |
 | [Closed-loop roadmap](docs/hardware-closed-loop-roadmap.md) | Control bring-up, calibration, and acceptance |

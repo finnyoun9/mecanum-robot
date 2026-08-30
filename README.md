@@ -96,44 +96,51 @@ flowchart TB
 
 ## 技术地图
 
-按子系统分类的技术点导航；每个节点的理论基础、代码位置和用途见 [技术地图详情](docs/technical-map.md)。
+技术地图保留为一页导航，详细原理、设计取舍、实现入口和证据边界拆分为六个专题，见[技术地图详情](docs/technical-map.md)。
 
 ```mermaid
 flowchart TB
     ROOT((MCR 技术地图))
 
+    subgraph ARCH[系统架构]
+        A1[Pi 5 + STM32 分层]
+        A2[控制链与反馈链]
+    end
+
     subgraph RT[实时控制]
-        RT1[FreeRTOS 5 任务调度]
-        RT2[PID / PI 速度闭环]
-        RT3[定时器 PWM + EXTI 编码器]
-        RT4[麦克纳姆运动学]
+        R1[FreeRTOS + 前馈 PI]
+        R2[PWM + EXTI 编码器]
+        R3[麦克纳姆运动学]
     end
 
-    subgraph COMM[通信链路]
+    subgraph COMM[通信]
         C1[UART 协议 + CRC16]
-        C2[DMA + 环形缓冲区]
-        C3[I2C 总线]
-        C4[SPI + NRF24 无线]
+        C2[DMA staging + 软件 ring]
+        C3[NRF24 无线]
     end
 
-    subgraph SENSE[感知与状态估计]
-        S1[Mahony 姿态解算]
-        S2[ToF 测距]
-        S3[EKF 状态估计]
-        S4[LD06 SLAM 建图]
+    subgraph SENSE[感知定位]
+        S1[I2C / IMU / ToF]
+        S2[里程计 + EKF]
+        S3[LD06 + SLAM]
     end
 
-    subgraph SYS[系统与验证]
-        Y1[SIL 软件在环]
-        Y2[GitHub Actions CI]
-        Y3[安全状态机 / 多源仲裁]
-        Y4[电源与 ADC 分压]
+    subgraph SAFE[安全可靠性]
+        F1[急停 / 失联 / 堵转]
+        F2[控制权租约]
     end
 
+    subgraph VERIFY[验证体系]
+        V1[CTest / SIL / CI]
+        V2[Probe / 真机 / 整车]
+    end
+
+    ROOT --> ARCH
     ROOT --> RT
     ROOT --> COMM
     ROOT --> SENSE
-    ROOT --> SYS
+    ROOT --> SAFE
+    ROOT --> VERIFY
 ```
 
 ## 验证数据
@@ -262,7 +269,7 @@ ctest --test-dir firmware/Core/build --output-on-failure
 | 文档 | 内容 |
 | --- | --- |
 | [项目状态](docs/project-status.md) | 最新进展、真机证据、阻塞项与下一步 |
-| [技术地图](docs/technical-map.md) | 按子系统分类的技术点：理论、代码位置、用途 |
+| [技术地图](docs/technical-map.md) | 六个技术专题的导航、实现入口与证据边界 |
 | [接线指南](docs/wiring.md) | STM32、TB6612、编码器、I2C、NRF24 引脚 |
 | [供电方案](docs/power-system.md) | 3S 电池、电源树、保护与故障记录 |
 | [闭环路线](docs/hardware-closed-loop-roadmap.md) | 控制 bring-up、标定和验收方法 |

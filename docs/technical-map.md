@@ -1,39 +1,84 @@
 # 技术地图 / Technical Map
 
-按子系统分类的技术点速查：每个点的理论基础、在本仓库里的具体体现（文件/模块）、以及为什么这么做。配合 [README 技术地图图示](../README.md#技术地图) 使用；真机数据和证据边界以 [项目状态](project-status.md) 为准。
+本页是一页式技术导航。稳定的原理、架构和取舍进入专题文档；最新完成度和真机数据以[项目状态](project-status.md)为准；物理连接与供电分别以[接线指南](wiring.md)和[供电方案](power-system.md)为准。
 
-## 实时控制
+## 证据标签
 
-| 技术点 | 理论基础 | 项目体现 | 用途 / 为什么这么做 |
+| 标签 | 含义 |
+| --- | --- |
+| `[CODE]` | 已实现并可构建 |
+| `[HOST]` | Linux主机单元测试通过 |
+| `[SIL]` | 软件在环闭环通过 |
+| `[HW]` | 单模块或台架真机验证 |
+| `[SYSTEM]` | 指定场景端到端整车验证 |
+| `[PENDING]` | 尚未完成对应验证 |
+
+不同层级不能互相替代。例如`[SIL]`不能证明电气和机械对象，首次`[SYSTEM]`出图也不能证明地图质量、Nav2或长期可靠性达标。
+
+## 专题导航
+
+| 领域 | 核心问题 | 专题入口 | 主要代码入口 | 当前证据 |
+| --- | --- | --- | --- | --- |
+| 系统架构 | 为什么采用Pi 5 + STM32分层，命令和反馈怎样流动 | [系统架构](technical/01-system-architecture.md) | [`main.c`](../firmware/Core/Src/main.c)、[`mcr_bringup`](../ros2_ws/src/mcr_bringup) | `[SYSTEM]`基础链已闭合 |
+| 实时控制 | 如何把`vx/vy/ω`变成稳定、平滑的四轮PWM | [实时控制](technical/02-realtime-control.md) | [`robot_control.c`](../firmware/Core/Src/robot_control.c)、[`encoder.c`](../firmware/Core/Src/encoder.c) | `[HW]`基础闭环；长期带载`[PENDING]` |
+| 通信 | UART字节流怎样经过DMA、ring、协议与错误恢复 | [通信链路](technical/03-communication.md) | [`protocol.c`](../shared/protocol.c)、[`serial_protocol.cpp`](../ros2_ws/src/mcr_bringup/src/serial_protocol.cpp) | 921600双向`[SYSTEM]` |
+| 感知定位 | 编码器、IMU、ToF和LD06怎样形成里程计与地图 | [感知与定位](technical/04-sensing-localization.md) | [`ahrs.c`](../firmware/Core/Src/ahrs.c)、[`mcr_bringup`](../ros2_ws/src/mcr_bringup) | 传感器`[SYSTEM]`；地图质量`[PENDING]` |
+| 安全可靠性 | 失联、近障、堵转和多控制源竞争时怎样停车与恢复 | [安全与可靠性](technical/05-safety-reliability.md) | [`robot_control.c`](../firmware/Core/Src/robot_control.c)、[`remote_control.c`](../firmware/Core/Src/remote_control.c) | 基础安全`[HW]`；长期误报`[PENDING]` |
+| 验证 | 如何用单测、SIL、probe和整车测试建立证据链 | [验证体系](technical/06-verification.md) | [`firmware/Core/SIL`](../firmware/Core/SIL)、[`tools`](../tools) | CTest 12/12；多层真机证据 |
+
+## 依赖关系
+
+```mermaid
+flowchart TB
+    ARCH[系统架构]
+    CTRL[实时控制]
+    COMM[通信链路]
+    SENSE[感知与定位]
+    SAFE[安全与可靠性]
+    VERIFY[验证体系]
+
+    ARCH --> CTRL
+    ARCH --> COMM
+    CTRL --> SENSE
+    COMM --> SENSE
+    CTRL --> SAFE
+    COMM --> SAFE
+    SENSE --> SAFE
+    VERIFY -.验证.-> ARCH
+    VERIFY -.验证.-> CTRL
+    VERIFY -.验证.-> COMM
+    VERIFY -.验证.-> SENSE
+    VERIFY -.验证.-> SAFE
+```
+
+推荐阅读顺序：系统架构 → 实时控制与通信 → 感知定位 → 安全可靠性 → 验证体系。验证不是最后才做的阶段，而是横跨所有专题的方法。
+
+## 关键实现速查
+
+| 技术点 | 理论关键词 | 实现位置 | 为什么这样做 |
 | --- | --- | --- | --- |
-| FreeRTOS 5 任务调度 | 抢占式优先级调度、时间片轮转 | [`firmware/Core/Src/main.c`](../firmware/Core/Src/main.c)：CtrlTask 100Hz/优先级4、CommTask 事件驱动/3、SensorTask/RemoteTask 2、MonitorTask 1Hz/1 | 控制环需要固定周期和低抖动；通信/传感器不能阻塞控制，用优先级分层保证 |
-| PID / PI 速度闭环 | 比例积分控制、抗积分饱和（anti-windup） | [`firmware/Core/Src/pid.c`](../firmware/Core/Src/pid.c)：单轮 `Kp=100,Ki=300`；四轮前馈 + `Kp=15,Ki=35` + 零速消抖 | D 项会放大编码器量化噪声，故用 PI；积分上限按 `out_max/Ki` 推导防止饱和后超调 |
-| 定时器复用 + 软件 EXTI 编码器 | 定时器 PWM 通道、外部中断（EXTI） | [`firmware/Core/Src/encoder.c`](../firmware/Core/Src/encoder.c)：TIM2/3/4 占用于四路 PWM 后，编码器改用 GPIO EXTI 双边沿解码，448 edges/圈 | 硬件资源冲突（TIM1 与 NRF24/USART1 冲突）时的降级方案；不是硬件正交编码模式 |
-| 麦克纳姆运动学 | 正/逆运动学矩阵 | [`mecanum_kinematics.cpp`](../ros2_ws/src/mcr_bringup/src/mecanum_kinematics.cpp) | `cmd_vel`（vx/vy/w）与四轮目标转速之间互相转换 |
+| FreeRTOS五任务 | 优先级、周期任务、事件驱动 | [`main.c`](../firmware/Core/Src/main.c) | 100 Hz控制优先，通信和传感器不能阻塞它 |
+| 前馈 + PI | 系统辨识、anti-windup、量化 | [`robot_control.c`](../firmware/Core/Src/robot_control.c) | 前馈给基础输出，PI修正模型误差；D会放大量化噪声 |
+| 软件EXTI编码器 | 定时器资源、边沿计数 | [`encoder.c`](../firmware/Core/Src/encoder.c) | TIM资源与USART/NRF24冲突后的F103取舍，当前448 edges/圈 |
+| 麦轮运动学 | 正/逆运动学、统一缩放 | [`mecanum_ik.c`](../firmware/Core/Src/mecanum_ik.c) | `vx/vy/ω`与四轮角速度双向换算 |
+| 自定义协议 | 帧同步、长度、序号、CRC16 | [`protocol.h`](../shared/protocol.h) | C/C++共享契约；CRC检错但不认证 |
+| DMA + 软件ring | producer/consumer、IDLE/HT/TC | [`main.c`](../firmware/Core/Src/main.c) | DMA只写staging，任务只读ring，隔离并发和调度抖动 |
+| NRF24无线 | SPI寄存器、Auto-ACK、租约 | [`nrf24l01.c`](../firmware/Core/Src/nrf24l01.c) | 独立于Pi的人工接管；SPI响应与无线ACK分层判断 |
+| I2C2多设备 | 7位地址、共享总线、访问频率 | [`mpu6050.c`](../firmware/Core/Src/mpu6050.c)、[`tof_sensor.c`](../firmware/Core/Src/tof_sensor.c)、[`ssd1306.c`](../firmware/Core/Src/ssd1306.c) | MPU6050、ToF、OLED共享PB10/PB11，按不同频率调度 |
+| Mahony + EKF | 四元数、gyro bias、协方差 | [`ahrs.c`](../firmware/Core/Src/ahrs.c)、[`mcr_bringup`](../ros2_ws/src/mcr_bringup) | MCU提供姿态，Pi融合轮速和IMU；无磁力计yaw仍会漂 |
+| 安全状态机 | 故障锁存、迟滞、租约 | [`robot_control.c`](../firmware/Core/Src/robot_control.c) | 不同故障使用不同触发和解除语义 |
+| SIL + CI | Mock HAL、对象模型、自动回归 | [`firmware/Core/SIL`](../firmware/Core/SIL)、[Actions](../.github/workflows) | 生产逻辑可在Linux回归，但不替代真机 |
 
-## 通信链路
+## 文档职责
 
-| 技术点 | 理论基础 | 项目体现 | 用途 / 为什么这么做 |
-| --- | --- | --- | --- |
-| 自定义 UART 协议 + CRC16 | 帧同步、循环冗余校验 | [`shared/protocol.h`](../shared/protocol.h)：`[0xA5][0x5A][LEN][SEQ][CMD][PAYLOAD][CRC16]`，5 状态帧同步机 | 跨平台（STM32 C / Pi C++）共享一套协议，CRC 检错但不是加密认证 |
-| DMA + 环形缓冲区 | DMA 搬运不占 CPU、环形缓冲避免拷贝竞争 | `main.c` 里 DMA 只写 staging buffer，`HAL_UARTEx_RxEventCallback` 搬入软件 ring | 921600 波特率下解析任务和 DMA 不会抢同一块内存；ODOM 约 50Hz，验收 CRC 错误为 0 |
-| I2C 总线 | 7 位地址、主从时序、总线共享 | [`mpu6050.c`](../firmware/Core/Src/mpu6050.c) / [`tof_sensor.c`](../firmware/Core/Src/tof_sensor.c) / [`ssd1306.c`](../firmware/Core/Src/ssd1306.c) 共享 I2C2（PB10/PB11） | 一条总线复用多个低速传感器；OLED 丝印 `0x78` 是 8 位写地址，代码用 7 位 `0x3C` |
-| SPI + NRF24 无线 | 全双工同步串行、无 ACK 机制 | [`nrf24l01.c`](../firmware/Core/Src/nrf24l01.c)：位翻转模拟 SPI | 2.4GHz 遥控；无 ACK，靠寄存器默认值（`STATUS=0x0E`）探针证明模块真的在响应 |
+| 文档 | 唯一职责 |
+| --- | --- |
+| 本技术地图 | 导航、术语入口和当前证据摘要 |
+| `technical/*.md` | 稳定的原理、设计、取舍和验证方法 |
+| [项目状态](project-status.md) | 按时间记录最新进展、故障和实测证据 |
+| [闭环路线](hardware-closed-loop-roadmap.md) | 电机、编码器和PI实验数据 |
+| [接线指南](wiring.md) | 引脚、电压容限与接线步骤 |
+| [供电方案](power-system.md) | 电源树、上电纪律与供电故障 |
+| [无线遥控](remote_control.md) | 手柄数据包、按键、接线和使用流程 |
 
-## 感知与状态估计
-
-| 技术点 | 理论基础 | 项目体现 | 用途 / 为什么这么做 |
-| --- | --- | --- | --- |
-| Mahony 姿态解算（AHRS） | 互补滤波、四元数姿态表示 | [`ahrs.c`](../firmware/Core/Src/ahrs.c) | 6 轴 IMU（无磁力计）融合出 roll/pitch；yaw 没有绝对基准，会漂 |
-| ToF 测距 | 飞行时间测距、I2C 寄存器窗口读取 | [`tof_sensor.c`](../firmware/Core/Src/tof_sensor.c) | 近距离避障/停车；曾因 burst 读取把低字节复制成高字节，改逐字节读取修复 |
-| EKF 状态估计 | 扩展卡尔曼滤波、过程/观测协方差 | `ros2_ws/src/mcr_bringup` 的 `robot_localization` 配置 | 融合轮速里程计 + IMU，比单一里程计更平滑；协方差没调好会导致地图扭曲 |
-| LD06 SLAM 建图 | 激光扫描匹配、占据栅格地图 | [`ros2_ws/src/ldlidar_stl_ros2`](../ros2_ws/src/ldlidar_stl_ros2) + SLAM Toolbox | 静止扫描稳定（点位标准差中位数约 8.1mm），当前地图扭曲主因是 gyro 零偏与打滑，不是雷达本体 |
-
-## 系统与验证
-
-| 技术点 | 理论基础 | 项目体现 | 用途 / 为什么这么做 |
-| --- | --- | --- | --- |
-| SIL 软件在环 | Mock/仿真替代硬件做逻辑验证 | [`firmware/Core/SIL/mocks/mock_hal.c`](../firmware/Core/SIL/mocks/mock_hal.c)：用 include 路径优先级影子化真实 HAL 头文件 | 固件源码零修改即可编译成 Linux 可执行文件，在 CI 里跑控制逻辑回归；不验证电气/机械时序 |
-| GitHub Actions CI | 持续集成 | [`.github/workflows/`](../.github/workflows) | 每次 push 自动跑协议/PID/运动学/SIL 测试，CTest 12/12 |
-| 安全状态机 + 多源仲裁 | 有限状态机、优先级仲裁、超时租约 | `main.c` / [`remote_control.c`](../firmware/Core/Src/remote_control.c)：K9 急停、250ms 通信看门狗、`remote_active` 仲裁 | 手柄和 Pi 同时下发目标速度时避免"最后写入者获胜"导致的失控 |
-| 电源与 ADC 分压 | 分压公式、ADC 采样电容限制 | 设计见 [供电方案](power-system.md) | 3S 电池（100kΩ/27kΩ 分压）电量估算；代码与主机测试已完成，未改线烧录 |
+新增功能时，先在`project-status.md`记录真实进度；结论稳定后更新对应专题；只有领域入口或证据摘要变化时才修改本页。
