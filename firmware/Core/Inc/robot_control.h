@@ -32,8 +32,14 @@
 #define PID_CORRECTION_MAX 350.0f
 #define PID_INTEGRAL_MAX (PID_CORRECTION_MAX / PID_KI_DEFAULT)
 
-/* --- ToF emergency threshold --- */
-#define TOF_EMERGENCY_MM 100  /* Brake if obstacle < 10 cm */
+/* --- ToF emergency threshold ---
+ * CLEAR is deliberately higher than the trip point (hysteresis): without
+ * a gap, a target sitting near 100 mm would trip/clear every ~50 ms tick
+ * on sensor noise alone. Reversing away from an obstacle is still allowed
+ * while latched (see robot_ctrl_loop) — the trip point only blocks
+ * driving further into it. */
+#define TOF_EMERGENCY_MM       100  /* Brake if obstacle < 10 cm */
+#define TOF_EMERGENCY_CLEAR_MM 180  /* Auto-clear once backed off past 18 cm */
 
 /* --- Stall protection ---
  * A wheel commanded hard but not turning is either jammed, disconnected or

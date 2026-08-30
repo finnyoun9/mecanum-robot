@@ -91,8 +91,19 @@ void robot_ctrl_loop(void) {
     uint32_t stall_dt = dt_ctrl > (1000u / CTRL_LOOP_HZ)
                         ? (1000u / CTRL_LOOP_HZ) : dt_ctrl;
 
-    /* --- Run 4 PID loops --- */
-    if (!g_robot.emergency_stop_active) {
+    /* --- Run 4 PID loops ---
+     * A stop latched purely by the ToF (no K9, no comm-watchdog trip —
+     * those still leave comm_stop_latched/emergency_stop_active with no
+     * finer-grained reason to distinguish, so a K9 press coinciding with
+     * a ToF trip is not separately tracked and would also be released by
+     * the auto-clear below; that compound case is accepted as out of
+     * scope here) still runs the loop, but every wheel's requested target
+     * is clamped to non-positive: reversing away from the obstacle is
+     * allowed, driving further into it is not. Positive-duty-convention
+     * is forward (see motor.c), so clamping to <=0 rad/s is "not forward"
+     * regardless of which wheels a strafe/rotate command touches. */
+    bool tof_only_stop = g_robot.emergency_stop_active && g_robot.tof_emergency;
+    if (!g_robot.emergency_stop_active || tof_only_stop) {
         for (int i = 0; i < MOTOR_COUNT; i++) {
             /* A wheel latched as stalled stays dead until an explicit
              * clear: re-driving it is what damages the motor. */
@@ -107,6 +118,9 @@ void robot_ctrl_loop(void) {
             g_robot.measured_w[i] = measured;
 
             float requested = g_robot.target_w[i];
+            if (tof_only_stop && requested > 0.0f) {
+                requested = 0.0f;
+            }
             if (absf(requested) < STOP_TARGET_RAD_S &&
                 absf(control_target_w[i]) < STOP_TARGET_RAD_S) {
                 /* Preserve the M3 hardware-accepted stop behaviour: once
@@ -173,6 +187,18 @@ void robot_ctrl_loop(void) {
             g_robot.tof_distance_mm > 0) {
             g_robot.tof_emergency = true;
             robot_emergency_stop();
+        } else if (g_robot.tof_emergency &&
+                   g_robot.tof_distance_mm > TOF_EMERGENCY_CLEAR_MM) {
+            /* Backed off past the hysteresis gap: release the ToF latch.
+             * Only touches state the ToF path itself set — comm_stop_latched
+             * is already false from robot_emergency_stop() and stays that
+             * way, and a latched motor fault (stalled_mask) is untouched,
+             * so a stall discovered while backing away still needs its own
+             * explicit robot_clear_motor_fault(). */
+            g_robot.tof_emergency = false;
+            if (g_robot.stalled_mask == 0) {
+                g_robot.emergency_stop_active = false;
+            }
         }
         last_tof_ms = now;
     }
