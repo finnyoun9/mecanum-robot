@@ -32,6 +32,7 @@ extern "C" {
 #define CMD_VEL_CTRL      0x10  /* Set 4 wheel target velocities */
 #define CMD_EMERGENCY_STOP 0x11 /* Immediate motor stop */
 #define CMD_PID_TUNE      0x12  /* Set PID gains for one motor */
+#define CMD_CLEAR_MOTOR_FAULT 0x13 /* Release a latched stall fault (send only after inspecting the wheel) */
 #define CMD_HEARTBEAT     0x1F  /* Keep-alive ping */
 
 /* --- Command IDs (STM32 → Pi) --- */

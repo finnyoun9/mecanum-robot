@@ -253,6 +253,13 @@ void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len) {
     case CMD_EMERGENCY_STOP:
         robot_emergency_stop();
         break;
+    case CMD_CLEAR_MOTOR_FAULT:
+        /* Deliberately a distinct command from the deadman-recovery paths:
+         * a stalled wheel is a hardware condition, not a comm blip, so it
+         * only clears on an explicit request, never implicitly on the
+         * next motion packet. */
+        robot_clear_motor_fault();
+        break;
     case CMD_PID_TUNE: {
         if (len < sizeof(cmd_pid_tune_t)) break;
         cmd_pid_tune_t tune;
