@@ -1,223 +1,230 @@
-# Mecanum Mobile Robot (MCR) / 麦克纳姆轮全向移动机器人
+<div align="center">
 
-## Multi-tier RTOS + ROS2 Autonomous Mobile Robot with Mecanum Wheels / 基于 FreeRTOS + ROS2 的多层架构自主移动机器人
+# MCR · 麦克纳姆轮自主移动机器人
 
-A full-stack embedded robotics project targeting **MCU+RTOS** job roles.
-Covers the complete stack: bare-metal drivers → real-time OS → communication protocols → ROS2 → SLAM/navigation → computer vision → mobile manipulation.
+**STM32F103 + FreeRTOS + Raspberry Pi 5 + ROS 2 Jazzy**
 
-面向嵌入式 **MCU+RTOS** 岗位的全栈机器人项目。覆盖完整技术栈:裸机驱动 → 实时操作系统 → 通信协议 → ROS2 → SLAM/导航 → 计算机视觉 → 移动操作。
+从实时电机控制、无线遥控和自定义串口协议，到 `ros2_control`、传感器融合、SLAM 与边缘视觉的一体化机器人平台。
 
-## Mobile Manipulator Extension / 移动操作扩展
+[![中文](https://img.shields.io/badge/语言-简体中文-2563eb?style=for-the-badge)](README.md)
+[![English](https://img.shields.io/badge/Language-English-334155?style=for-the-badge)](README_EN.md)
 
-The project now includes a **LeArm 6-DOF manipulator with an STM32 controller**. The arm is developed as an independent subsystem under [`manipulator/`](manipulator/) and will be integrated with the existing Raspberry Pi 5 + STM32 mecanum base through ROS 2.
+[![Firmware Tests](https://github.com/finnyoun9/mecanum-robot/actions/workflows/firmware-tests.yml/badge.svg)](https://github.com/finnyoun9/mecanum-robot/actions/workflows/firmware-tests.yml)
+[![ROS 2 Build](https://github.com/finnyoun9/mecanum-robot/actions/workflows/ros2-build.yml/badge.svg)](https://github.com/finnyoun9/mecanum-robot/actions/workflows/ros2-build.yml)
+![ROS 2 Jazzy](https://img.shields.io/badge/ROS_2-Jazzy-22314E?logo=ros)
+![FreeRTOS](https://img.shields.io/badge/RTOS-FreeRTOS-16A085)
+![STM32](https://img.shields.io/badge/MCU-STM32F103-03234B?logo=stmicroelectronics)
+![Raspberry Pi](https://img.shields.io/badge/SBC-Raspberry_Pi_5-A22846?logo=raspberrypi)
 
-项目新增 **LeArm 六自由度机械臂 + STM32 核心模组**。机械臂作为 [`manipulator/`](manipulator/) 独立子系统开发，后续通过 ROS 2 与现有 Raspberry Pi 5 + STM32 麦克纳姆底盘联动。
+<img src="docs/screenshots/rviz2_mecanum_square_moving.png" alt="MCR 在 RViz2 中执行全向方形轨迹" width="88%">
 
-- 装配散件并记录结构、回差、关节限位和线束设计
-- 实现总线舵机通信、UART/DMA、FreeRTOS 调度、看门狗和故障处理
-- 接入自定义 `ros2_control` hardware interface 和 MoveIt 2
-- 完成导航、AprilTag 定位、抓取、运输和放置演示
+</div>
 
----
+> [!IMPORTANT]
+> 当前主线处于 **M5：移动建图质量优化**。底盘、遥控、Pi↔STM32 链路、ROS 2 控制栈和首次 SLAM 已闭合；下一步是陀螺仪零偏、EKF 融合、重建图和 Nav2 验收。
 
-## Progress / 开发进度
+## 导航
 
-- **ROS2 Jazzy 开发环境** ✅ — Ubuntu 24.04 (arm64) Docker 容器跑在树莓派 5 上,`colcon build` 全绿,3 个功能包、8 项测试通过
-- **ros2_control 硬件接口** ✅ — 自定义 `SystemInterface` 已移植到 Jazzy 4.x API(`on_init` / `on_activate` / `on_deactivate`),以共享库插件加载
-- **URDF 模型** ✅ — 4 麦克纳姆轮 + 传感器模型,已通过 xacro 展开并在 RViz2 中渲染(见下方截图)
-- **串口二进制协议** ✅ — 自定义协议 + CRC16-MODBUS 校验,Pi 与 STM32 共享的 C 库
-- **麦克纳姆轮运动学** ✅ — 正/逆运动学解算 + 单元测试(gtest,固件内也有 C 版)
-- **NRF24L01 无线遥控** ⚠️ — 实物收发、K1/K9、250 ms 失联停车和低速全向控制曾完成真机验收；替换 Blue Pill 与新车端 NRF24L01+ 已通过 SWD/烧录和 SPI `STATUS=0x0E` 健康检查，待手柄开机后的 Auto-ACK 与实际收包复验（见 [docs/remote_control.md](docs/remote_control.md)）
-- **ROS2 协议闭环** ✅ — `/cmd_vel` → `mecanum_drive_controller` → 自定义硬件接口 → STM32 UART 模拟器全链路打通；0.3 m/s 指令在协议模拟中得到 0.302 m/s 里程计，尚不是真实底盘结果
-- **STM32 速度闭环** ✅ — 单轮 PI 和独立四轮闭环目标已完成空载与低速落地基础验收；完整 `firmware_arch_main()` 的 UART/I2C MSP 和长期带载测试仍未完成
-- **四轮开环真机控制** ✅ — 四个电机经 TB6612 已完成 6 V 空载正反转与方向一致性验证；正式供电方案见 [docs/power-system.md](docs/power-system.md)
-- **SIL 软件在环测试** ✅ — 固件编译为 Linux 原生可执行文件，Mock HAL + FreeRTOS 调度模拟器在 CI 中验证命令解析、PWM、编码器累积和里程计数据链；不替代真机 PID 性能测试(见 [docs/resume-highlights.md](docs/resume-highlights.md))
-- **LD06 激光雷达** ✅ — 经 CH340 USB-TTL 在 Pi 5 上完成 230400 波特率原始帧、ROS 2 `/scan` 约 10 Hz 和二维 `PointCloud2` 实测；已以 submodule 接入 bringup（`robot.launch.py` + URDF `laser_link` TF，GCC-13 本地 patch）
-- **IMX219 + YOLOv8n** ✅ — CSI 相机 640×480 连续采集超过 30 FPS；Pi 5 CPU 上 ONNX Runtime 实测约 6 FPS，显示器/人体目标可识别；当前为独立验证，尚未封装成 ROS 2 节点
-- **Nav2 + SLAM** 🚧 — 配置骨架已就位，LD06 `/scan` 已独立验证，待接入 bringup 并与真实里程计、TF 联调
+[项目概览](#项目概览) · [当前进度](#当前进度) · [系统架构](#系统架构) · [验证数据](#验证数据) · [快速开始](#快速开始) · [路线图](#路线图) · [文档索引](#文档索引)
 
-> 当前最重要的缺口是 **M4：闭合 Pi↔STM32 真机 UART/里程计链路**——`rtos_drive` FreeRTOS 目标已上板，洪流测试暴露双向帧错误（波特率/电气层待查，Pi 侧已实测排除）和错误风暴下的 lockup（待复现取证）；车端新 NRF24 已通过 SPI 健康检查，待空口收包复验。具体证据边界见 [项目状态](docs/project-status.md)。
+## 项目概览
 
-> 后续开发请先读 [docs/project-status.md](docs/project-status.md)，从当前 M4/Pi 侧集成缺口继续推进，不要把 SIL、协议模拟器或独立传感器测试写成整车闭环结果。
+MCR 是一套真实硬件驱动的全栈机器人系统。STM32 负责确定性控制与安全，Raspberry Pi 5 运行 ROS 2、融合定位、SLAM 和感知；两端通过带 CRC16 的二进制协议通信。
 
-> RViz2 渲染效果(无头 Xvfb 截图,1280×800):
-> - 静止渲染:[docs/screenshots/rviz2.png](docs/screenshots/rviz2.png)
-> - 麦克纳姆方形轨迹(边 0.45 m,含横向平移,机器人运动中):[docs/screenshots/rviz2_mecanum_square_moving.png](docs/screenshots/rviz2_mecanum_square_moving.png)
-> - 方形轨迹完成:[docs/screenshots/rviz2_mecanum_square_complete.png](docs/screenshots/rviz2_mecanum_square_complete.png)
+项目强调可验证性：同一套核心固件同时用于真机目标、主机单元测试和 SIL 软件在环；项目状态严格区分真机实测、测试验证与推导结果。
 
-## Development Environment / 开发环境
+### 核心能力
 
-| 层 | 说明 |
-| --- | --- |
-| 开发机 | macOS (Apple Silicon),用于编辑代码与 git 管理 |
-| 机器人主机 | Raspberry Pi 5 (8GB),原装 **Raspberry Pi OS (Debian 12 Bookworm)**,不重刷系统 |
-| ROS2 | Jazzy 运行在 **Ubuntu 24.04 Docker 容器** 内 (`mcr-ros2:jazzy`),arm64 原生速度,无 QEMU 模拟 |
-| GUI 工具 | `mcr-ros2:jazzy-gui` 附加 rviz2、robot_state_publisher、Xvfb、ImageMagick,可无显示器渲染截图 |
-| 构建工具 | colcon / ament_cmake / CMake,共享协议库用 `BUILD_SHARED_LIBS` 便于 pluginlib 加载 |
-| 固件工具链 | STM32CubeMX + FreeRTOS (CMSIS_V2) + arm-none-eabi GCC |
-| 网络 | 容器用 `--network host` 保证 DDS 组播;Pi 上 mihomo 代理 (127.0.0.1:7890) 在监听时传给 docker build 加速 |
+- 四路麦克纳姆轮速度闭环、前馈、斜坡限速与零速消抖
+- NRF24L01 无线全向遥控、急停、失联停车与 Pi/手柄优先级仲裁
+- MPU6050、ToF、OLED、编码器、LD06 与 IMX219 多传感器接入
+- 自定义 UART 二进制协议、CRC16、DMA 环形接收和通信看门狗
+- ROS 2 Jazzy、`ros2_control`、EKF、SLAM Toolbox 与 Nav2 配置
+- 固件 SIL、主机测试、ROS 2 测试和 GitHub Actions 持续集成
 
-为什么 Pi 不装 Ubuntu:主机保留原装 Raspberry Pi OS,ROS2 跑在 Ubuntu 24.04 容器里,天然 arm64 原生速度,无需模拟。摄像头 (CSI) 留在宿主机原生运行,不进容器 —— 详见 [`docker/README.md`](docker/README.md)。
+## 当前进度
 
-## Architecture / 系统架构
-
-```
-Raspberry Pi 5 (Ubuntu 24.04 + ROS2 Jazzy)
-  ├── SLAM 建图 (slam_toolbox)
-  ├── Nav2 全向导航
-  ├── ros2_control + 麦克纳姆轮运动学
-  ├── 感知层 (YOLO 检测、相机标定、激光三角法 3D 扫描)
-  └── 串口通信协议 (UART)
-          │
-STM32 (FreeRTOS + HAL)
-  ├── 4 路 PID 速度闭环 (100 Hz)
-  ├── 4 路正交编码器读数
-  ├── NRF24L01 无线遥控 (全向控制)
-  ├── ToF 紧急避障刹车
-  ├── IMU 姿态解算 (Mahony 滤波器)
-  └── DMA/IDLE 串口通信（代码路径已具备，CubeMX 与真机待接入）
-```
-
-## Directory Structure / 目录结构
-
-```
-mecanum-robot/
-├── firmware/                          # STM32 FreeRTOS 固件
-│   ├── Core/
-│   │   ├── Inc/                       # 头文件 (pid, motor, encoder, robot_control)
-│   │   ├── Src/                       # 实现 + main.c (FreeRTOS 任务)
-│   │   ├── SIL/                       # SIL 软件在环测试 (★★★ 简历亮点)
-│   │   │   ├── sil_main.c             #   测试入口,闭环验证 PID + 编码器 + 协议
-│   │   │   └── mocks/                 #   Mock HAL (GPIO/TIM/UART/I2C/FreeRTOS)
-│   │   └── CMakeLists.txt             # SIL 编译脚本
-│   └── remote_controller/             # NRF24L01 无线遥控器固件 (江协科技)
-├── shared/                            # 通信协议 (Pi 和 STM32 共享)
-│   ├── protocol.h                     # 帧格式定义
-│   └── protocol.c                     # CRC16 + 编解码
-├── ros2_ws/                           # ROS2 Jazzy 工作空间
-│   └── src/
-│       ├── mcr_bringup/               # 硬件接口 + 串口协议 + 运动学
-│       ├── mcr_description/           # URDF 模型 (4 麦克纳姆轮 + 传感器)
-│       └── mcr_navigation/            # Nav2 + SLAM 配置
-├── perception/                        # 计算机视觉 & 3D 扫描
-│   ├── laser_triangulation/           # 激光线 3D 扫描 (<1mm @ 30cm)
-│   ├── detection/                     # YOLOv8 ONNX 目标检测
-│   └── camera/                        # 相机标定 (棋盘格)
-└── docs/
-    ├── resources.md                   # 硬件选型与供应商参考
-    ├── ros2-guide.md                  # ROS2 学习资源整理
-    ├── ros2-learning.md               # ROS2 学习笔记
-    ├── remote_control.md              # NRF24L01 无线遥控方案 (协议/接线/映射)
-    ├── resume-highlights.md           # ★ 简历亮点与面试准备 (SIL/协议/RTOS/PID)
-    └── screenshots/                   # 界面截图 (rviz2 渲染)
-```
-
-## Getting Started / 快速开始
-
-### 1. Hardware / 硬件清单
-
-| 组件 Component | 型号 Model | 数量 Qty |
+| 子系统 | 状态 | 证据边界 |
 | --- | --- | --- |
-| 主控 SBC | Raspberry Pi 5 (8GB) | 1 |
-| MCU | STM32 (FreeRTOS) | 1 |
-| 底盘 Chassis | 4WD 麦克纳姆轮底盘 | 1 |
-| 电机 Motors | JGA25-370 编码器减速电机 | 4 |
-| 电机驱动 Driver | TB6612FNG 双路 H 桥 | 2 |
-| 激光雷达 LiDAR | LD06 360° + CH340 USB-TTL | 1 |
-| IMU | MPU6050 | 1 |
-| ToF 测距 | VL53L0X（当前驱动不兼容 VL53L1X） | 1 |
-| 相机 Camera | IMX219 8MP (CSI 排线) | 1 |
-| 无线遥控 Remote | NRF24L01+ 收发模块 + 江协科技手柄 | 2 |
-| 电源 Power | 3S 锂电池 + 降压模块 | 1 套 |
+| 四轮底盘与闭环控制 | **已真机验证** | 全向基础动作、前馈、停止消抖、正确链路下四轮一致性 |
+| 无线遥控与安全 | **已真机验证** | K1、K9、K10、250 ms 看门狗、手柄优先级仲裁 |
+| Pi↔STM32 通信 | **已闭合** | 921600 8N1、双向协议、ODOM、ROS 2 硬件接口 |
+| IMU / ToF / OLED | **已真机验证** | I2C2 共享总线、连续测距、姿态数据与状态页 |
+| LD06 激光雷达 | **已真机验证** | `/scan` 约 10 Hz，静止扫描稳定性良好 |
+| ROS 2 整车栈 | **已闭合** | `ros2_control`、控制器、EKF、TF 与里程计话题 |
+| SLAM | **进行中** | 已移动建图；当前地图存在扭曲与扫描匹配伪影 |
+| Nav2 自主导航 | **待验收** | 配置与启动骨架已具备，尚未完成实车目标点导航 |
+| IMX219 + YOLOv8n | **实验可用** | Pi 5 CPU 端约 4.5–6 FPS，ROS UDP 桥已实现 |
+| 电池电量显示 | **延期优化** | 条件编译代码与测试已完成，当前不改线、不烧录 |
+| 移动机械臂 | **早期骨架** | host protocol 与 SIL 骨架，不属于当前底盘主线 |
 
-当前实装的电源树、降压模块分工和首次上电检查见 [供电方案](docs/power-system.md)。
+完整、按日期更新的证据记录见 [项目状态与协作基线](docs/project-status.md)。
 
-### 2. Pi 5 Setup / 树莓派 5 环境搭建
+## 系统架构
 
-树莓派用原装 **Raspberry Pi OS (Debian 12)**,ROS2 跑在 Ubuntu 24.04 的
-Docker 容器里,无需重刷系统。摄像头留在宿主机原生跑,不进容器。
+```mermaid
+flowchart TB
+    RC[无线手柄] -->|NRF24L01| MCU
+    ENC[四路编码器] --> MCU[STM32F103 · FreeRTOS]
+    IMU[MPU6050] --> MCU
+    TOF[ToF 测距] --> MCU
+    MCU --> OLED[0.96 寸 OLED]
+    MCU -->|PWM + DIR| DRV[TB6612 ×2]
+    DRV --> MOTOR[四路 JGA25-370]
+    MCU <-->|UART 921600 · CRC16| PI[Raspberry Pi 5]
+    LIDAR[LD06] -->|USB-TTL| PI
+    CAMERA[IMX219 CSI] --> VISION[宿主机 YOLOv8n]
+    VISION -->|UDP| PI
+    PI --> CONTROL[ros2_control]
+    CONTROL --> EKF[robot_localization EKF]
+    EKF --> SLAM[SLAM Toolbox]
+    SLAM --> NAV[Nav2]
+```
+
+### 分层职责
+
+| 层 | 技术 | 职责 |
+| --- | --- | --- |
+| 实时控制 | STM32F103、FreeRTOS、C | 100 Hz 轮速控制、传感器、安全状态机、无线遥控 |
+| 边缘计算 | Raspberry Pi 5、Debian 12 | 设备接入、容器运行、CSI 视觉推理 |
+| 机器人中间件 | ROS 2 Jazzy、Ubuntu 24.04 Docker | 控制器、TF、融合定位、SLAM、导航、感知桥 |
+| 验证 | CTest、SIL、GTest、GitHub Actions | 协议、运动学、控制逻辑、驱动和构建回归 |
+
+## 验证数据
+
+| 指标 | 真机结果 |
+| --- | --- |
+| 四轮 2.5 rad/s 一致性 | 干净链路下轮间差约 **1.4%** |
+| STM32 ODOM | 约 **50 Hz**，有效验证中 CRC 错误为 0 |
+| ROS 2 里程计 | 原始约 **100 Hz**，EKF 输出约 **50 Hz** |
+| LD06 | `/scan` 约 **10 Hz**；静止点位标准差中位数约 **8.1 mm** |
+| CSI 相机 | 640×480 RGB 连续采集约 **30 FPS** |
+| YOLOv8n | Pi 5 CPU 端到端约 **4.5–6 FPS** |
+| 固件测试 | CMake/CTest **12/12** 通过 |
+
+这些数字只描述对应测试条件，不代表未测的带载极限、续航或最终导航精度。
+
+## 硬件组成
+
+| 模块 | 型号 / 方案 |
+| --- | --- |
+| 主控 | STM32F103C8T6 Blue Pill |
+| 机器人计算机 | Raspberry Pi 5 8GB |
+| 底盘 | 四轮 X 型麦克纳姆底盘 |
+| 电机与驱动 | JGA25-370 编码器电机 ×4、TB6612FNG ×2 |
+| 定位与避障 | MPU6050、LD06、I2C ToF 模组 |
+| 交互与遥控 | 0.96 寸 I2C OLED、NRF24L01+ 手柄 |
+| 视觉 | IMX219 8MP CSI 相机 |
+| 电源 | 3S 锂电池、独立降压与保护链路 |
+
+接线、供电和上电检查分别见 [接线指南](docs/wiring.md) 与 [3S 供电方案](docs/power-system.md)。
+
+## 快速开始
+
+### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/finnyoun9/mecanum-robot.git
+git clone --recurse-submodules https://github.com/finnyoun9/mecanum-robot.git
 cd mecanum-robot
+```
 
-# 首次运行自动构建 ROS2 Jazzy 镜像,然后进入容器 shell
-./docker/run.sh
+### 2. 构建 ROS 2 Jazzy 环境
 
-# 容器内:
+Pi 保留 Raspberry Pi OS，ROS 2 运行在原生 arm64 Ubuntu 24.04 容器中；CSI 相机留在宿主机。
+
+```bash
+./docker/run.sh --build
+
+# 容器内
 cd /ros2_ws
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 3. STM32 Firmware / 固件
-
-1. CubeMX 配置外设:UART、TIM 编码器模式 ×4、TIM PWM ×4、I2C (IMU)
-2. 开启 FreeRTOS (CMSIS_V2 接口)
-3. 将 `firmware/Core/` 下文件复制到生成的工程
-4. 按实际接线修改 `motor.c` 引脚映射
-5. 编译烧录
-
-### 4. Launch / 启动
+### 3. 构建生产固件
 
 ```bash
-# 终端 1:启动机器人底层驱动
+cd firmware/Core/HW
+make clean
+make TARGET=rtos_drive RTOS=1 TOF=1 OLED=1 OLED_CTRL=SH1106
+```
+
+烧录会复位真机并可能触发项目已知的 I2C 复位问题。操作硬件前先阅读 [真机目标说明](firmware/Core/HW/README.md)。
+
+### 4. 启动机器人与建图
+
+```bash
+# 容器内：底盘、雷达、控制器、EKF
 ros2 launch mcr_bringup robot.launch.py
 
-# 终端 2:启动 SLAM + 导航
-ros2 launch mcr_navigation navigation.launch.py
-
-# 终端 3:键盘遥控
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
+# 当前推荐的独立建图模式
+ros2 launch mcr_navigation navigation.launch.py nav2:=false rviz:=false
 ```
 
-### 5. Perception / 感知模块
+### 5. 运行测试
 
 ```bash
-pip install opencv-python numpy open3d onnxruntime
-
-# 相机标定
-python perception/camera/calibration.py
-
-# YOLO 目标检测（Pi CSI，headless 烟雾测试）
-python3 perception/detection/yolo_detect.py --camera csi --max-frames 20
-
-# 在 ROS Docker 中启动检测桥接；另一个 Pi 宿主机终端执行带 --ros-udp-port 的 YOLO 命令
-ros2 launch mcr_perception perception_bridge.launch.py
-
-# 激光三角法 3D 扫描
-cd perception/laser_triangulation
-python point_cloud_scanner.py
+cmake -S firmware/Core -B firmware/Core/build
+cmake --build firmware/Core/build -j4
+ctest --test-dir firmware/Core/build --output-on-failure
 ```
 
-> `yolo_detect.py` 默认走 IMX219 的 `Picamera2` CSI 入口，适合无桌面的 Pi 宿主机；ROS 2 通过本机 UDP 桥接发布检测结果，详见 [perception/detection/README.md](perception/detection/README.md)。USB 摄像头使用 `--camera usb --device 0`，仅在有桌面时添加 `--display`。
+## 可视化
 
-## Key Skills / 核心技术展示
+<details>
+<summary><strong>展开 RViz2 验证截图</strong></summary>
 
-- **SIL 软件在环测试**:Mock HAL 层 + FreeRTOS 轮询调度模拟，固件编译为 Linux 原生可执行文件，CI 自动验证控制数据链 (★★★)
-- **FreeRTOS**:5 任务实时调度,优先级管理,栈溢出监控
-- **PID 控制**:4 路位置式速度 PID 代码与 SIL 数据链验证 (100 Hz)，真机优先按 PI 调参
-- **UART/DMA 通信**:自定义二进制协议与 DMA/IDLE 接收代码，真机 CubeMX/时序待验证
-- **麦克纳姆轮运动学**:正/逆运动学,支持全向移动(横移 / 斜走 / 原地旋转)
-- **ros2_control**:自定义 `SystemInterface` 硬件接口,桥接串口 ↔ ROS2 控制器
-- **Nav2 导航**:全向路径规划 (DWB 局部规划器 + SmacPlannerHybrid 全局规划器)
-- **SLAM**:slam_toolbox 在线异步建图(激光 + IMU + 轮式里程计融合)
-- **激光三角法**:线激光 + 相机 3D 点云扫描代码，30 cm 下 <1 mm 是待实测目标
-- **YOLO 推理**:ONNX Runtime 边缘端目标检测
+| 机器人模型 | 全向轨迹进行中 | 方形轨迹完成 |
+| --- | --- | --- |
+| ![](docs/screenshots/rviz2.png) | ![](docs/screenshots/rviz2_mecanum_square_moving.png) | ![](docs/screenshots/rviz2_mecanum_square_complete.png) |
 
-## Roadmap / 实施路线
+</details>
 
-1. **Phase 1** — 硬件搭建与裸机电机验证
-2. **Phase 2** — FreeRTOS 多任务 + 4 路 PID 闭环
-3. **Phase 3** — Pi ↔ STM32 自定义通信协议
-4. **Phase 4** — ROS2 驱动层 (ros2_control + 麦克纳姆轮运动学)
-5. **Phase 5** — SLAM 建图 + Nav2 自主导航
-6. **Phase 6** — 视觉增强(Apriltag 定位 + 物体跟踪)
+## 路线图
 
-## Related Projects / 相关项目
+- [x] M1 · 硬件搭建、PWM、方向与编码器标定
+- [x] M2 · 单轮与四轮速度闭环、前馈和 SIL
+- [x] M3 · 无线遥控、安全状态机与真机基础运动
+- [x] M4 · Pi↔STM32、ROS 2 硬件接口与整车话题闭环
+- [ ] M5 · 传感器融合、移动建图质量与 Nav2（进行中）
+- [ ] M6 · 视觉辅助定位、目标交互与长期可靠性验收
 
-- **[stm32-pid-balancer](https://github.com/finnyoun9/stm32-pid-balancer)** — PID 控制实验台。当前有通用 PID、host test 和单电机 m01 固件，自平衡真机尚未完成。
+当前最短路径：**陀螺仪零偏校准 → EKF 权重验证 → 重建图 → Nav2 目标点导航 → 30 分钟稳定性测试**。
 
-## License / 许可证
+## 文档索引
 
-MIT
+| 文档 | 内容 |
+| --- | --- |
+| [项目状态](docs/project-status.md) | 最新进展、真机证据、阻塞项与下一步 |
+| [接线指南](docs/wiring.md) | STM32、TB6612、编码器、I2C、NRF24 引脚 |
+| [供电方案](docs/power-system.md) | 3S 电池、电源树、保护与故障记录 |
+| [闭环路线](docs/hardware-closed-loop-roadmap.md) | 控制 bring-up、标定和验收方法 |
+| [无线遥控](docs/remote_control.md) | 遥控协议、按键、接线与安全行为 |
+| [ROS 2 Docker](docker/README.md) | Pi 宿主机、容器、设备和远程 RViz2 |
+| [项目亮点](docs/resume-highlights.md) | 可用于简历与面试的证据边界 |
+
+<details>
+<summary><strong>仓库结构</strong></summary>
+
+```text
+mecanum-robot/
+├── firmware/              STM32 底盘、遥控器与机械臂固件
+├── shared/                Pi/STM32 共享协议与 CRC16
+├── ros2_ws/src/           bringup、description、navigation、perception
+├── perception/            CSI/YOLO、相机标定与激光三角法实验
+├── tools/                 链路、编码器、轮速、IMU 与 ToF 诊断工具
+├── docker/                Raspberry Pi OS 上的 ROS 2 Jazzy 容器
+└── docs/                  接线、供电、状态、路线与验证记录
+```
+
+</details>
+
+---
+
+<div align="center">
+
+**证据优先，真机优先，安全优先。**
+
+[English Documentation](README_EN.md) · [最新项目状态](docs/project-status.md)
+
+</div>
