@@ -763,6 +763,21 @@ four-wheel plant"——换到四轮/RR 上纯 PI 直接过冲震荡，实测 RR 
 - `firmware/Core/SIL/` —— Linux 主机仿真，mock HAL + 轮询调度器。
 - **编码器不用硬件定时器**：TIM2/3/4 全部产生 PWM，TIM1 编码器脚被 NRF24/USART1 占用，四路全部软件 EXTI 解码。改这块前先读 `encoder.c` 顶部注释。
 
+### `rtos_drive` 重新编译时别漏了 `TOF=1 OLED=1`（2026-08-30）
+
+`make TARGET=rtos_drive RTOS=1 flash` 默认只带 `HW_IMU_ONLY`（ToF 代码整段编译掉）、
+不带 `HW_OLED`——2026-08-30 当天几次重编译都漏了这两个参数，ToF 和 OLED 因此"看起来坏了"
+（OLED 测电压是对的却不亮；ToF 读数恒为 0 但 `error_flags` 也是 0，不报错），其实只是
+没编译进固件，跟接线/硬件无关。已验收的完整配置是：
+
+```sh
+make TARGET=rtos_drive RTOS=1 TOF=1 OLED=1 TOOLCHAIN=/usr/bin flash
+```
+
+**另外，每次 `flash` 之后 IMU/ToF 会暂时全零**（`flash` 末尾的 `reset` 是一次 ST-Link
+触发的复位，复位后 I²C 会挂死，跟 [project-status.md 里 2026-08-30 那条记录](#2026-08-30ST-Link-软复位后-I²C-传感器挂零--已复现修复)是同一个问题）——**每次重新烧录后都要把
+整车传感器侧断电 3–5 秒再上电**，不是新故障，不用重新排查。
+
 ### 读 GDB 变量的注意事项
 
 `st-util` 在**启动时和 GDB 连接时都会复位芯片**。连上就立刻 halt 读到的是刚复位几毫秒的状态（还停在启动延时里），会看起来像"编码器不计数但轮子在转"。正确做法是先 `continue` 让它自由跑够时间再打断，示例见 HW 目录 README。
