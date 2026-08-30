@@ -13,6 +13,9 @@ from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped
 
 
+MAX_POSES = 2000  # ~40s of trail at the 50 Hz /odometry/filtered rate
+
+
 class OdomToPath(Node):
     def __init__(self):
         super().__init__('odom_to_path')
@@ -27,6 +30,12 @@ class OdomToPath(Node):
         p.pose = odom.pose.pose
         self.path.header = odom.header
         self.path.poses.append(p)
+        # poses grows without bound otherwise, and every publish re-sends
+        # the whole list -- at 50 Hz that's O(session length) work per
+        # callback and eventually pins a CPU core (measured 87% after
+        # ~20 min). A rolling window is plenty for a visualized trail.
+        if len(self.path.poses) > MAX_POSES:
+            del self.path.poses[:-MAX_POSES]
         self.pub.publish(self.path)
 
 
