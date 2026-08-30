@@ -534,7 +534,16 @@ void SensorTask(void *pvParameters) {
                 if (++oled_refresh_ticks >= OLED_REFRESH_TICKS) {
                     oled_refresh_ticks = 0;
                     oled_render_state(0U);
-                    oled_ok = ssd1306_write_frame(oled_frame, sizeof(oled_frame));
+                    /* Don't latch a single failed write into a permanent
+                     * disable: a transient I2C hiccup (bus contention
+                     * with MPU6050/ToF, or the ST-Link-reset lockup this
+                     * project keeps hitting) must not freeze the display
+                     * for the rest of the session. ssd1306_write_frame()
+                     * already bounds each write to 5 ms, so retrying every
+                     * refresh tick is cheap; oled_ok stays whatever
+                     * ssd1306_init() found at boot, not a running verdict
+                     * on every write since. */
+                    (void)ssd1306_write_frame(oled_frame, sizeof(oled_frame));
                 }
             }
 #endif
