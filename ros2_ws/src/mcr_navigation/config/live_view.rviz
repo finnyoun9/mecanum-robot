@@ -1,0 +1,50 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Name: Grid
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Map
+      Enabled: true
+      Name: Map
+      Topic:
+        Value: /map
+      Update Topic:
+        Value: /map_updates
+    - Class: rviz_default_plugins/LaserScan
+      Color: 255; 0; 0
+      Enabled: true
+      Name: LaserScan
+      Size (m): 0.05
+      Style: Points
+      Topic:
+        Value: /scan
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Name: TF
+      Show Names: true
+      Show Axes: true
+      Show Arrows: false
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+  Name: root
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 6
+      Name: Current View
+      Pitch: 1.3
+      Target Frame: <Fixed Frame>
+      Yaw: 0.78
+Window Geometry:
+  Height: 800
+  Width: 1280
