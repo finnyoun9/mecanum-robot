@@ -41,9 +41,7 @@ static TaskHandle_t hCommTask    = NULL;
 #ifndef HW_NO_SENSOR_TASK
 static TaskHandle_t hSensorTask  = NULL;
 #endif
-#ifndef HW_MINIMAL_TASKS
 static TaskHandle_t hRemoteTask  = NULL;
-#endif
 static TaskHandle_t hMonitorTask = NULL;
 
 /* --- Queues --- */
@@ -670,12 +668,8 @@ int firmware_arch_main(void) {
      * wired (see the ToF block in SensorTask). */
     xTaskCreate(SensorTask,  "Sensor", 256, NULL, 2, &hSensorTask);
 #endif
-#ifndef HW_MINIMAL_TASKS
-    /* The NRF24 link is not wired into the RTOS drive target yet. The task
-     * function stays compiled so the SIL build and future hardware targets
-     * are unaffected. */
+    /* Poll the car-side NRF24 receiver and apply valid handset commands. */
     xTaskCreate(RemoteTask,  "Remote", 256, NULL, 2, &hRemoteTask);
-#endif
     xTaskCreate(MonitorTask, "Monitor",128, NULL, 1, &hMonitorTask);
 
     /* --- Start scheduler (never returns) --- */

@@ -12,7 +12,7 @@
  *   - USART1 on PA9/PA10 at 921600 bit/s with DMA1 ch4 (TX) / ch5 (RX),
  *     IDLE-line reception into the Core/Src/main.c ring buffer
  *
- * Sensor (I2C) and NRF24 tasks are compiled out with HW_MINIMAL_TASKS.
+ * Sensor (I2C) and NRF24 tasks run in the shared Core/Src application.
  *
  * Safety state at boot: both TB6612 STBY lines are enabled, but motor.c
  * starts latched in emergency stop and the comm watchdog (100 ms deadman)

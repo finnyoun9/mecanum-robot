@@ -61,7 +61,7 @@ C_SRCS += main.c robot_control.c motor.c encoder.c pid.c mecanum_ik.c ahrs.c \
           mpu6050.c tof_sensor.c ssd1306.c oled_ui.c nrf24l01.c remote_control.c protocol.c
 # FreeRTOS kernel (ARM_CM3 port, heap_4 dynamic allocation)
 C_SRCS += tasks.c queue.c list.c timers.c port.c heap_4.c
-CFLAGS += -I fwinc -DHW_MINIMAL_TASKS
+CFLAGS += -I fwinc
 ifneq ($(TOF),1)
 # Keep an unfitted VL53L0X from presenting as a permanent fault. Build with
 # TOF=1 once the module is wired to the shared PB10/PB11 bus.

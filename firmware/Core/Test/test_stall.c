@@ -43,7 +43,11 @@ void comm_send_frame(const uint8_t *frame, uint8_t len) {
     (void)frame; (void)len;
 }
 
-void motor_init(void) { memset(g_duty, 0, sizeof(g_duty)); }
+void motor_init(void) {
+    memset(g_duty, 0, sizeof(g_duty));
+    /* Match the real motor driver: boot starts emergency-stopped. */
+    g_motor_stopped = true;
+}
 void motor_set_duty(motor_id_t id, int16_t duty) { g_duty[id] = duty; }
 void motor_emergency_stop(void) { g_motor_stopped = true; }
 void motor_resume(void) { g_motor_stopped = false; }
@@ -102,6 +106,107 @@ static void run_ms_linked(uint32_t ms) {
 static void set_targets(float w) {
     float t[4] = {w, w, w, w};
     robot_set_target_wheels(t);
+}
+
+/* ===== Wireless commands recover only the boot/deadman stop ===== */
+
+static void test_remote_command_recovers_boot_stop(void) {
+    g_tick_ms = 1000;
+    g_motor_stopped = false;
+    memset(g_duty, 0, sizeof(g_duty));
+    memset(g_fake_speed, 0, sizeof(g_fake_speed));
+    robot_init();
+
+    assert(robot_get_state()->emergency_stop_active == true);
+    assert(g_motor_stopped == true);
+
+    set_targets(8.0f);
+    assert(robot_get_state()->emergency_stop_active == false);
+    assert(g_motor_stopped == false);
+
+    printf("PASS test_remote_command_recovers_boot_stop\n");
+}
+
+static void test_remote_command_recovers_watchdog_stop(void) {
+    setup();
+    set_targets(8.0f);
+
+    g_tick_ms += COMM_WATCHDOG_MS + 50;
+    robot_ctrl_loop();
+    assert(robot_get_state()->emergency_stop_active == true);
+    assert(g_motor_stopped == true);
+
+    set_targets(8.0f);
+    assert(robot_get_state()->emergency_stop_active == false);
+    assert(g_motor_stopped == false);
+
+    printf("PASS test_remote_command_recovers_watchdog_stop\n");
+}
+
+static void test_remote_command_does_not_clear_explicit_estop(void) {
+    setup();
+    robot_emergency_stop();
+    assert(robot_get_state()->emergency_stop_active == true);
+
+    set_targets(8.0f);
+    assert(robot_get_state()->emergency_stop_active == true);
+    assert(g_motor_stopped == true);
+
+    printf("PASS test_remote_command_does_not_clear_explicit_estop\n");
+}
+
+static void test_default_pid_breaks_measured_start_deadzone(void) {
+    g_tick_ms = 1000;
+    g_motor_stopped = false;
+    memset(g_duty, 0, sizeof(g_duty));
+    memset(g_fake_speed, 0, sizeof(g_fake_speed));
+    robot_init();
+
+    /* 2 rad/s is roughly 10% of the remote's full-forward wheel target.
+     * The real drivetrain starts at 10% duty but not at 5%, so the
+     * production defaults must produce at least 100/1000 immediately. */
+    set_targets(2.0f);
+    /* The accepted controller slews 1 rad/s per tick, so the first tick
+     * deliberately stays soft and the second crosses the 10% duty start. */
+    g_tick_ms += TICK_MS;
+    robot_ctrl_loop();
+    g_tick_ms += TICK_MS;
+    robot_ctrl_loop();
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+        assert(g_duty[i] >= 100);
+    }
+
+    printf("PASS test_default_pid_breaks_measured_start_deadzone\n");
+}
+
+static void test_centered_remote_does_not_dither_stopped_wheel(void) {
+    setup();
+    set_targets(0.0f);
+
+    /* One encoder quantum can alternate sign around rest. A controller
+     * that keeps chasing zero turns that into alternating motor clicks. */
+    for (int n = 0; n < 8; n++) {
+        float quantum = (n & 1) ? -1.4f : 1.4f;
+        for (int i = 0; i < MOTOR_COUNT; i++) g_fake_speed[i] = quantum;
+        run_ms_linked(TICK_MS);
+        for (int i = 0; i < MOTOR_COUNT; i++) assert(g_duty[i] == 0);
+    }
+
+    printf("PASS test_centered_remote_does_not_dither_stopped_wheel\n");
+}
+
+static void test_remote_cadence_has_watchdog_margin(void) {
+    setup();
+    set_targets(2.0f);
+
+    /* The handset transmits every 100 ms and the receiver polls every
+     * 50 ms. A legal scheduling phase can therefore approach 150 ms. */
+    g_tick_ms += 150;
+    robot_ctrl_loop();
+    assert(robot_get_state()->emergency_stop_active == false);
+    assert(g_motor_stopped == false);
+
+    printf("PASS test_remote_cadence_has_watchdog_margin\n");
 }
 
 /* ===== A jammed wheel trips, and only that wheel ===== */
@@ -271,6 +376,12 @@ static void test_stall_detected_in_reverse(void) {
 }
 
 int main(void) {
+    test_remote_command_recovers_boot_stop();
+    test_remote_command_recovers_watchdog_stop();
+    test_remote_command_does_not_clear_explicit_estop();
+    test_default_pid_breaks_measured_start_deadzone();
+    test_centered_remote_does_not_dither_stopped_wheel();
+    test_remote_cadence_has_watchdog_margin();
     test_stall_trips_only_the_stalled_wheel();
     test_latched_wheel_stays_dead();
     test_deadman_recovery_does_not_release_stall();

@@ -14,9 +14,39 @@ extern void comm_send_frame(const uint8_t *frame, uint8_t len);
 extern uint32_t hal_get_tick_ms(void);
 
 static robot_state_t g_robot;
+static float control_target_w[MOTOR_COUNT];
+
+#define TARGET_SLEW_RAD_S_PER_TICK 1.0f
+#define STOP_TARGET_RAD_S          0.25f
+
+static float absf(float value) {
+    return value < 0.0f ? -value : value;
+}
+
+static float slew_towards(float current, float requested) {
+    if (requested > current + TARGET_SLEW_RAD_S_PER_TICK) {
+        return current + TARGET_SLEW_RAD_S_PER_TICK;
+    }
+    if (requested < current - TARGET_SLEW_RAD_S_PER_TICK) {
+        return current - TARGET_SLEW_RAD_S_PER_TICK;
+    }
+    return requested;
+}
+
+static float speed_feedforward(float speed) {
+    /* Inverse of the lifted-chassis battery sweep used by the M3
+     * remote_pid_drive target: rad/s = 0.2875*duty% - 0.79. */
+    float magnitude = absf(speed);
+    if (magnitude < STOP_TARGET_RAD_S) return 0.0f;
+
+    float duty = (magnitude + 0.79f) * 34.78f;
+    if (duty > PID_OUT_MAX) duty = PID_OUT_MAX;
+    return speed < 0.0f ? -duty : duty;
+}
 
 void robot_init(void) {
     memset(&g_robot, 0, sizeof(g_robot));
+    memset(control_target_w, 0, sizeof(control_target_w));
 
     motor_init();
     encoder_init();
@@ -31,6 +61,11 @@ void robot_init(void) {
 
     /* Default IMU quaternion to identity */
     g_robot.imu_q[0] = 1.0f;
+    /* motor_init() deliberately leaves the hardware driver stopped. Keep
+     * the public state in sync so the first live motion command can take
+     * the boot/deadman recovery path instead of having its PWM discarded
+     * forever by motor_set_duty(). */
+    g_robot.emergency_stop_active = true;
     g_robot.comm_timeout = true; /* Start in timeout until first RX */
     /* The boot-time stop is recoverable by the first live motion command,
      * exactly like a comm-watchdog trip (deadman-switch semantics). */
@@ -68,10 +103,29 @@ void robot_ctrl_loop(void) {
                 continue;
             }
 
-            pid_setpoint(&g_robot.pids[i], g_robot.target_w[i]);
             float measured = encoder_get_speed_rads((motor_id_t)i, dt_ctrl);
             g_robot.measured_w[i] = measured;
-            float pid_out = pid_update(&g_robot.pids[i], measured);
+
+            float requested = g_robot.target_w[i];
+            if (absf(requested) < STOP_TARGET_RAD_S &&
+                absf(control_target_w[i]) < STOP_TARGET_RAD_S) {
+                /* Preserve the M3 hardware-accepted stop behaviour: once
+                 * the ramp reaches centre, coast with PWM=0 and discard
+                 * integral residue. Chasing encoder quantisation around
+                 * zero produces the audible forward/reverse clicking. */
+                control_target_w[i] = 0.0f;
+                pid_reset(&g_robot.pids[i]);
+                motor_set_duty((motor_id_t)i, 0);
+                g_robot.stall_ms[i] = 0;
+                continue;
+            }
+
+            control_target_w[i] = slew_towards(control_target_w[i], requested);
+            pid_setpoint(&g_robot.pids[i], control_target_w[i]);
+            float pid_out = speed_feedforward(control_target_w[i]) +
+                            pid_update(&g_robot.pids[i], measured);
+            if (pid_out > PID_OUT_MAX) pid_out = PID_OUT_MAX;
+            if (pid_out < -PID_OUT_MAX) pid_out = -PID_OUT_MAX;
             motor_set_duty((motor_id_t)i, (int16_t)pid_out);
 
             /* Stall detection: driven hard but not turning. Both tests use
@@ -98,8 +152,11 @@ void robot_ctrl_loop(void) {
     if ((now - g_robot.last_rx_tick) > COMM_WATCHDOG_MS) {
         if (!g_robot.comm_timeout) {
             g_robot.comm_timeout = true;
-            g_robot.comm_stop_latched = true;
             robot_emergency_stop();
+            /* robot_emergency_stop() defaults to an explicit, latched
+             * stop. Mark this particular stop recoverable only after the
+             * motors have actually been stopped. */
+            g_robot.comm_stop_latched = true;
         }
     }
 
@@ -131,6 +188,13 @@ void robot_set_target_wheels(const float w[4]) {
      * tick keeps the 100ms comm timeout from braking mid-remote-drive. */
     g_robot.last_rx_tick = hal_get_tick_ms();
     g_robot.comm_timeout = false;
+    /* Match CMD_VEL_CTRL deadman semantics: a valid wireless motion
+     * command may release only the boot/watchdog stop. K9, ToF and motor
+     * faults leave comm_stop_latched false and remain latched. */
+    if (g_robot.emergency_stop_active && g_robot.comm_stop_latched &&
+        !g_robot.tof_emergency) {
+        robot_emergency_clear();
+    }
 }
 
 void robot_handle_command(uint8_t cmd, const uint8_t *payload, uint8_t len) {
@@ -234,8 +298,13 @@ void robot_update_tof(uint16_t distance_mm, bool valid, bool timed_out) {
 
 void robot_emergency_stop(void) {
     g_robot.emergency_stop_active = true;
+    /* Safe default: stops requested explicitly (K9, UART e-stop or ToF)
+     * are not cleared by the next ordinary motion packet. The comm
+     * watchdog sets this back to true at its call site. */
+    g_robot.comm_stop_latched = false;
     for (int i = 0; i < MOTOR_COUNT; i++) {
         g_robot.target_w[i] = 0.0f;
+        control_target_w[i] = 0.0f;
         pid_reset(&g_robot.pids[i]);
         /* Not a stall any more: nothing is being driven. Keep
          * stalled_mask latched — only an explicit clear releases it. */

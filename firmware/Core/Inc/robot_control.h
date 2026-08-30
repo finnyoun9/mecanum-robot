@@ -17,16 +17,20 @@
 #define CTRL_LOOP_HZ     100   /* Motor PID loop frequency */
 #define ODOM_PUBLISH_HZ  50    /* Odometry update frequency */
 #define TOF_READ_HZ      20    /* ToF read frequency */
-#define COMM_WATCHDOG_MS 100   /* Communication timeout */
+#define COMM_WATCHDOG_MS 250   /* Handset sends at 100 ms; allow poll jitter */
 
 /* --- Default PID gains (tuned per motor, these are starting points) ---
  * Speed loop starts as pure PI (Kd = 0) per the closed-loop roadmap:
  * tune Kp, then Ki on the real chassis first, add D only if needed. */
-#define PID_KP_DEFAULT   2.5f
-#define PID_KI_DEFAULT   0.8f
+/* M3 four-wheel handset gains. The measured inverse plant supplies the
+ * feed-forward effort in robot_control.c; PI only corrects tracking error.
+ * Pi control may replace these through CMD_PID_TUNE. */
+#define PID_KP_DEFAULT   15.0f
+#define PID_KI_DEFAULT   35.0f
 #define PID_KD_DEFAULT   0.0f
 #define PID_OUT_MAX      1000.0f   /* PWM range */
-#define PID_INTEGRAL_MAX 300.0f
+#define PID_CORRECTION_MAX 350.0f
+#define PID_INTEGRAL_MAX (PID_CORRECTION_MAX / PID_KI_DEFAULT)
 
 /* --- ToF emergency threshold --- */
 #define TOF_EMERGENCY_MM 100  /* Brake if obstacle < 10 cm */
