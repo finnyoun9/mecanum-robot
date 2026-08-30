@@ -297,6 +297,69 @@ HSI，使硬编码的 72 MHz 定时器将发包降至约 1 Hz。车端阈值已�
 
 ⚠️ 两个 ST-Link 报告的 flash 容量不同（65536 vs 67107840），**这是固件版本差异不是故障**。判据仍是"多次读数是否一致"：手柄那个连测三次都是 67107840，稳定即正常。
 
+### 2026-08-30：ST-Link 软复位后 I²C 传感器挂零 — 已复现修复
+
+codex 的下地前架空复测发现：ST-Link 软复位后，共用 I²C 的 MPU6050 和 ToF 同时输出全零，
+四轮闭环/ROS `/cmd_vel`/RR 堵转锁存/串口链路（50 Hz、CRC 0）均已通过。按建议对整车传感器
+侧彻底断电 3–5 秒再上电后复测：`imu_q` 四元数持续变化、`imu_gyro` 噪声在静止态合理范围，
+ToF 读数 550–586 mm 连续变化，0 次 `ERR_TOF_TIMEOUT`——**确认是复位时序问题，不是硬件故障，
+断电重上电即可恢复**。
+
+复测过程中顺带发现 `tools/imu_watch.py`、`tools/tof_watch.py` 两个诊断脚本在磁盘上是空文件
+（全 0 字节，未提交到 git），已按 `shared/protocol.h` 的 `odom_feedback_t` 布局重建（复用
+`link_check.py` 已验证过的帧解析）。
+
+⚠️ 新发现、未解决：复测期间 `error_flags` 在 `0x00` 和 `0x08` 之间间歇跳变（约一半帧）。
+`protocol.h` 目前只正式定义到 `ERR_TOF_TIMEOUT = 0x04`；`link_check.py` 里本地写了个
+`ERR_TOF_INVALID = 0x08` 但共享头文件没有这个宏，说明固件端可能已加了这个错误位、
+头文件没跟上。同一时段 ToF 单独复测显示读数正常、`err=0x00`，暂看不出实际影响，但
+`0x08` 的含义和 header 是否要补定义待确认。
+
+**M3 通过条件尚未达成，下地前不建议直接切自由跑**：
+- ~~RR 轮增益从未单独确认过~~ — 2026-08-30 已确认，见下一节，根因是 PID 调参不是硬件。
+- 带载（落地）堵转电流、阶跃响应、带载跟踪误差**仍未实测**——现有 PID 参数都是空载/架空调的。
+- M3 官方通过条件"四轮闭环持续 30 min 无失控"只达成了"基本运动子集"。
+- 当前供电是 DP100 台式电源（不是电池），电流限制远低于 3S 40C 电池，带载堵转特性未知时
+  用限流电源先测更安全。
+
+建议先在 DP100 供电、人员值守下做低速短距（如 0.5 m）落地测试，盯 RR 轮是否滞后/过热，
+确认正常后再逐步加时长，最后才换电池做无绳测试。
+
+### 2026-08-30（续）：RR "偏慢+咔嚓" 根因是 PID 调参，不是硬件；顺带修了一个真实的急停状态 bug
+
+延续上一节的架空复测，`drive_check.py --spin 2.5` 悬空测试四轮时最初**全部 0 edges**（不止 RR），
+排查发现 `robot_control.c` 的 `robot_init()` 只锁了 `g_robot.comm_stop_latched`，没有同步锁
+`g_robot.emergency_stop_active`，导致它和 `motor.c` 自己的 `emergency_stopped` 锁状态不同步——
+`CMD_VEL_CTRL` 的"首次活动指令解锁"逻辑因此判断条件恒假，锁永远解不开。已修复（一行 diff，
+`robot_init()` 里补 `g_robot.emergency_stop_active = true;`，让开机态正确等价于一次
+comm-watchdog trip，注释里本来就是这个意图）。**但这不是这次挡住测试的直接原因**——
+`drive_check.py` phase 1 的心跳间隔天然会在 100 ms 内触发一次真实 watchdog trip，
+两个标志本来就会被那次 trip 正确同步；真正挡住的是下面这条。
+
+真正原因：`tools/drive_check.py --tune-pid` 用的是 M2 单轮空转标定时的猛药参数
+`Kp=100/Ki=300`。`remote_pid_drive_main.c`（无线遥控验收通过的固件）里第 27 行注释已经
+明确写着"M2's Kp=100/Ki=300 were valid for one isolated FR step test, but overdrive the
+four-wheel plant"——换到四轮/RR 上纯 PI 直接过冲震荡，实测 RR 单轮测试从 1.45 → 0.84 → 1.58 →
+1.73 rad/s 抖动不收敛，物理上表现为"转得慢+来回咔嚓"（新装减速箱有齿隙，配合过冲震荡更明显）。
+插拔 RR 接线**没有解决问题**（甚至一度更差），排除了接触不良假设。
+
+换成验收通过的 `Kp=15/Ki=35/Kd=0`（`remote_pid_drive_main.c` 里的验证值，`integral_limit`
+按 `out_max/Ki≈28.57` 推导）后，震荡消失，四轮转速收敛到 **1.66–1.73 rad/s**，彼此差距
+收窄到 4% 以内——**RR 本身没有硬件问题**，之前 4.9%/更大的轮间差距是震荡状态下的假象。
+
+⚠️ 新待办：四轮此时只到目标 2.5 rad/s 的 66–69%，比 `Kp=100/Ki=300` 时 FL/FR/RL 能到的
+2.3–2.41 更低。原因是 `remote_pid_drive` 的验证方案里**大部分驱动力来自前馈**
+（`speed_feedforward()`：按实测的占空比-转速曲线把目标速度直接换算成 duty，PI 只修轮间差异），
+而 `rtos_drive`/`robot_control.c` 当前的 `CMD_VEL_CTRL` 路径**没有移植这个前馈项**，纯 PI 在
+4 秒测试窗口内还没爬到目标附近。要不要把 `speed_feedforward()` 移植进 `robot_control.c`
+是下一步要做的决定，现在还没做。
+
+诊断过程中还顺带发现并修复了两个空文件（`tools/imu_watch.py`、`tools/tof_watch.py` 磁盘上
+是全 0 字节，未提交到 git）和 `tools/drive_check.py` 结尾被截断缺失的 `sys.exit(main())`——
+都是同一类"写入中途被打断"的旧问题，已按 `shared/protocol.h` 的 `odom_feedback_t` 布局
+重建，复用 `link_check.py` 的帧解析。新增 `tools/rr_only_check.py`：只命令 RR、其余三轮
+锁 0，用于隔离单轮问题；支持 `--kp/--ki/--kd/--integral-limit` 传参复测不同增益组合。
+
 ---
 
 ## 固件结构（容易走错的地方）

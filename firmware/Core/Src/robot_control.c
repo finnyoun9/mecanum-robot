@@ -34,6 +34,7 @@ void robot_init(void) {
     g_robot.comm_timeout = true; /* Start in timeout until first RX */
     /* The boot-time stop is recoverable by the first live motion command,
      * exactly like a comm-watchdog trip (deadman-switch semantics). */
+    g_robot.emergency_stop_active = true;
     g_robot.comm_stop_latched = true;
 }
 
