@@ -15,6 +15,7 @@
  * Key mapping:
  *   KEY=1  → toggle remote drive enable/disable
  *   KEY=9  → emergency stop
+ *   KEY=10 → clear a latched motor stall fault (see robot_clear_motor_fault())
  */
 
 #ifndef REMOTE_CONTROL_H
@@ -34,6 +35,7 @@
 /* --- Key codes in the controller's KEY byte --- */
 #define REMOTE_KEY_TOGGLE_ENABLE 1   /* K1 — enable/disable remote drive */
 #define REMOTE_KEY_ESTOP         9   /* K9 — emergency stop */
+#define REMOTE_KEY_CLEAR_FAULT   10  /* K10 — clear a latched motor stall fault */
 
 /* --- Remote state --- */
 typedef struct {

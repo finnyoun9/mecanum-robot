@@ -581,6 +581,9 @@ void RemoteTask(void *pvParameters) {
                 if (res.key == REMOTE_KEY_ESTOP) {
                     robot_emergency_stop();
                 }
+                if (res.key == REMOTE_KEY_CLEAR_FAULT) {
+                    robot_clear_motor_fault();
+                }
                 if (rstate.enabled) {
                     robot_set_target_wheels(res.wheel_speed);
                 } else if (res.key == REMOTE_KEY_TOGGLE_ENABLE) {
