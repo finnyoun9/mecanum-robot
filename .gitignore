@@ -43,3 +43,7 @@ perception/**/scan_output.*
 # OS
 .DS_Store
 Thumbs.db
+
+# SLAM 建图产物（体积大且易变，按需本地生成）
+maps/*.pgm
+ros2_ws/maps/

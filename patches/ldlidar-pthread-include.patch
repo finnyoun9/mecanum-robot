@@ -1,0 +1,13 @@
+diff --git a/ldlidar_driver/include/logger/log_module.h b/ldlidar_driver/include/logger/log_module.h
+index 46e1882..b57d4ac 100644
+--- a/ldlidar_driver/include/logger/log_module.h
++++ b/ldlidar_driver/include/logger/log_module.h
+@@ -37,7 +37,7 @@
+ #ifndef LINUX
+ #include <windows.h>
+ #else
+-//#include <pthread.h>
++#include <pthread.h>
+ #include <stdarg.h>
+ #define printf_s(fileptr,str)  (fprintf(fileptr,"%s",str))
+ #define __in
