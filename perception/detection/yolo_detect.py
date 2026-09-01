@@ -13,13 +13,40 @@ import numpy as np
 
 MODEL_PATH = Path(__file__).with_name("yolo_world.onnx")
 INPUT_SIZE = 640
+
 # Open-vocabulary set baked into yolo_world.onnx at export time (see
 # edge-ai-lab/benchmark_yolo_world.py). Order must match the classes passed
 # to model.set_classes() during export.
-CLASSES = [
+OPEN_VOCAB_CLASSES = [
     "person", "chair", "table", "sofa", "door",
     "box", "shoe", "trash can", "cable", "pet",
 ]
+
+# Standard COCO-80 order used by stock Ultralytics YOLOv8 exports (yolov8n.onnx).
+COCO_CLASSES = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
+    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
+    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
+    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
+    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+    "hair drier", "toothbrush",
+]
+
+# Mutable: main() points this at OPEN_VOCAB_CLASSES or COCO_CLASSES once it
+# knows which model was loaded. Detection.label reads whatever it points to.
+CLASSES = OPEN_VOCAB_CLASSES
+
+
+def classes_for_model(model_path: Path) -> list[str]:
+    """yolo_world*.onnx carries the open-vocab label set; everything else is
+    treated as a stock Ultralytics export with the standard COCO-80 classes."""
+    return OPEN_VOCAB_CLASSES if "world" in model_path.stem.lower() else COCO_CLASSES
 
 
 @dataclass(frozen=True)
@@ -188,6 +215,9 @@ def main() -> int:
         raise SystemExit("onnxruntime is required: pip install onnxruntime") from error
     if args.display:
         import cv2
+
+    global CLASSES
+    CLASSES = classes_for_model(args.model)
 
     session = ort.InferenceSession(str(args.model), providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name

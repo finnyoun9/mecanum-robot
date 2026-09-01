@@ -1,0 +1,36 @@
+[
+  {
+    "model": "yolov8n.onnx",
+    "model_size_mb": 12.26,
+    "frames": 100,
+    "camera": "csi",
+    "resolution": "640x480",
+    "fps_overall": 5.18,
+    "inference_latency_ms_avg": 157.26,
+    "inference_latency_ms_p95": 183.06,
+    "inference_latency_ms_min": 151.87,
+    "inference_latency_ms_max": 205.51,
+    "cpu_time_s": 69.51,
+    "cpu_percent_of_one_core": 360.2,
+    "peak_rss_mb": 260.0,
+    "detections_total": 101,
+    "frames_with_zero_detections": 10
+  },
+  {
+    "model": "yolo_world.onnx",
+    "model_size_mb": 47.82,
+    "frames": 100,
+    "camera": "csi",
+    "resolution": "640x480",
+    "fps_overall": 1.83,
+    "inference_latency_ms_avg": 508.92,
+    "inference_latency_ms_p95": 579.56,
+    "inference_latency_ms_min": 494.17,
+    "inference_latency_ms_max": 660.73,
+    "cpu_time_s": 268.72,
+    "cpu_percent_of_one_core": 490.6,
+    "peak_rss_mb": 352.5,
+    "detections_total": 128,
+    "frames_with_zero_detections": 5
+  }
+]
