@@ -50,3 +50,6 @@ Thumbs.db
 maps/*.pgm
 ros2_ws/maps/
 tools/.Xauth_xrdp
+
+# core dumps
+core.*
