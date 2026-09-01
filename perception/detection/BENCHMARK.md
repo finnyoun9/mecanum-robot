@@ -116,7 +116,24 @@ PYTHONPATH=/usr/lib/python3/dist-packages /home/pi/yolo-venv/bin/python \
   benchmark_ncnn.py --model-dir yolov8n_ncnn_model --camera csi --frames 100
 ```
 
-### 未做（下一轮可选，最有希望摸到 15 FPS 的杠杆）
+### 追加：NCNN 自己的 INT8 量化（同日）
 
-NCNN 自己的 INT8 量化路径（`ncnn2table` + `ncnn2int8`）—— 这两个工具不在 pip 装的 `ncnn` 包里，需要单独编译。
-如果 NCNN fp32（11.42）叠加 INT8 能拿到类似 ONNX 那样 ~1.4x 的量化收益，理论上能摸到 16 FPS 左右，正好过线。
+工具从 [ncnn GitHub release](https://github.com/Tencent/ncnn/releases) 的预编译 Ubuntu 24.04 包里提取（脚本见
+`edge-ai-lab/quantize_ncnn_int8.sh`）。用真实校准图跑 KL 散度量化，输出验证正常（固定测试图 max class-conf
+0.79 vs fp32 的 0.90，检出框 34 vs 42，合理精度损失，不是假结果）。但真机结果反直觉：
+
+| 模型 | Pi 5 FPS |
+| --- | --- |
+| NCNN fp32 | 11.42 |
+| **NCNN INT8** | **9.16（比 fp32 还慢）** |
+
+**根因**：`cat /proc/cpuinfo` 确认 Pi 5（Cortex-A76）支持 NEON dot-product 指令（`asimddp`），硬件能力够，但
+pip 装的 `ncnn` aarch64 通用 wheel 大概率没有针对这个指令集编译（manylinux wheel 为了兼容更老 ARM 芯片，通常
+不默认开 ARMv8.2 优化），INT8 矩阵乘法走了没加速的慢路径。真正的修复需要从源码编译 ncnn（开
+`NCNN_ARM82DOT`），这次没做，留给下一轮。
+
+### 最终结论
+
+15 FPS 目标未达成，最好成绩是 **NCNN fp32 11.42 FPS（2.25x baseline）**。ONNX INT8、NCNN INT8 这一轮软件层面
+能试的量化路径都试过了（一个不够快、一个反而更慢），下一步的杠杆要么是从源码编译 ncnn 挖 ARM 指令集红利，
+要么直接换 NPU 平台（RK3588/Jetson，见 edge-ai-lab ROADMAP Track 5）。
