@@ -114,3 +114,54 @@ Message Filter dropping message: frame 'laser' at time ... for reason
 slam_toolbox 会显示 `active` 且不报错，但**既不出 `/map` 也不发 `map->odom`**，
 很容易误判成参数问题。改对 frame 后立刻出现
 `Registering sensor: [Custom Described Lidar]`，地图开始生成。
+
+## 在 xrdp 桌面上实时看 SLAM（RViz）
+
+headless 验证之外，也可以在完整桌面上开 RViz 看实时建图。走 WSL 的
+**xrdp 远程桌面**（见 dev-environment 仓库 bench-wsl 文档：mstsc 连
+`localhost:3390`，finn 登录 XFCE）。
+
+### 链路
+
+```
+Windows mstsc ──→ xrdp XFCE 桌面 (Xorg :10)
+                        ↑ abstract socket @/tmp/.X11-unix/X10
+容器内 rviz2 ───────────┘  (--network host 才共享得到)
+     └ 订阅 /map /scan /tf
+```
+
+### 一键启动
+
+```bash
+# 1. mstsc 登录 localhost:3390（必须先有 xrdp 会话）
+# 2. WSL 里起 SLAM 栈
+bash tools/run_slam_sil.sh          # 容器名 mcr_slam
+# 3. 把 RViz 弹到桌面
+bash tools/rviz_to_xrdp.sh
+```
+
+`rviz_to_xrdp.sh` 自动：检测 xrdp :10 会话 → 拷 Xauthority cookie 进容器 →
+设 `DISPLAY=:10` 启动 rviz2 并加载 `live_view.rviz`（Map + LaserScan + TF，
+Fixed Frame = map）。
+
+### 三个关键坑（都是现踩的）
+
+1. **xrdp 会话是 Xorg `:10`，用 abstract socket**。`/tmp/.X11-unix/` 里只有
+   `X0`（WSLg），看不到 X10 是正常的——它以 `@/tmp/.X11-unix/X10` 存在于
+   abstract namespace。容器**必须 `--network host`** 才共享网络命名空间、
+   连得到这个 abstract socket。
+2. **镜像要装 rviz2**。`jazzy-gui` 镜像原本只有 nav2 的 rviz 插件、没有
+   rviz2 本体。已在 `docker/Dockerfile.wsl` 加 `ros-jazzy-rviz2`（Pi 的
+   headless `Dockerfile` 不动，Pi 没显示器）。
+3. **ogre 库路径**。rviz2 启动若报 `libOgreMain.so.1.12.10 cannot open`，
+   库在 vendor 目录，加
+   `export LD_LIBRARY_PATH=/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:$LD_LIBRARY_PATH`
+   （正常 source 后一般已含，脚本里兜底）。
+
+### X 授权
+
+容器里跑 GUI 要 X cookie。xrdp 会话的 cookie 在 `~/.Xauthority`，
+拷到挂载进容器的目录（`tools/.Xauth_xrdp`，已 gitignore），容器内设
+`XAUTHORITY` 指向它。
+
+> 注意 `tools/.Xauth_xrdp` 含会话 cookie，**不要提交**（已在 .gitignore）。
