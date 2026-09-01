@@ -154,7 +154,10 @@ def open_camera(kind: str, width: int, height: int, device: int):
         camera = Picamera2()
         camera.configure(camera.create_video_configuration(main={"size": (width, height), "format": "RGB888"}))
         camera.start()
-        return lambda: camera.capture_array("main")[:, :, :3], camera.close
+        # Picamera2's "RGB888" format is a documented misnomer: the array it
+        # hands back is actually BGR-ordered. Reverse the channel axis so
+        # callers (preprocess/draw_detections) get the true RGB they assume.
+        return lambda: camera.capture_array("main")[:, :, :3][:, :, ::-1], camera.close
 
     import cv2
     camera = cv2.VideoCapture(device)
