@@ -72,3 +72,51 @@ PYTHONPATH=/usr/lib/python3/dist-packages /home/pi/yolo-venv/bin/python \
 ```
 
 完整逐帧数据见同目录 `benchmark_report.json`。
+
+## Track 2 补充：INT8 量化 + NCNN（2026-09-01）
+
+目标：把 baseline 5.08 FPS 推到 edge-ai-lab ROADMAP 里定的 JD 门槛 **>=15 FPS**。
+量化脚本见 [edge-ai-lab/quantize_int8.py](https://github.com/finnyoun9/edge-ai-lab/blob/main/quantize_int8.py)。
+
+| 模型 | FPS | 推理延迟 avg | 模型大小 | 相对 baseline |
+| --- | ---: | ---: | ---: | ---: |
+| YOLOv8n ONNX fp32（baseline） | 5.08 | 156.9 ms | 12.3 MB | 1.0x |
+| YOLOv8n ONNX INT8（PTQ） | 6.96 | 103.6 ms | 6.0 MB | 1.37x |
+| YOLOv8n NCNN fp32（无量化） | **11.42** | **75.8 ms** | 12.1 MB | **2.25x** |
+
+**结论：15 FPS 目标未达成，但 NCNN 不量化就已经比 ONNX Runtime 量化后还快。** 说明这个瓶颈更多在推理框架本身的
+ARM NEON 优化程度，而不是精度位宽。ONNX Runtime 的 INT8 kernel 在 ARM CPU 上没有 NCNN 手调得彻底。
+
+### 踩的坑
+
+**默认量化把分类头压成全零。** 第一次用 ONNX Runtime 默认的按张量（per-tensor）INT8 量化，FPS 看起来很好
+（9.81 FPS），但 100 帧真实摄像头画面 **零检出**。诊断：拿固定测试图对比量化前后的原始输出张量，发现框坐标
+基本正常，但全部 80 个类别通道的置信度精确等于 0.0 —— 不是精度下降，是分类头直接失能。根因是 Detect head
+最后的 Sigmoid 输出动态范围窄，per-tensor 量化的单一 scale 覆盖不了。
+
+修复：按通道（per-channel）量化 + QDQ 格式（这一步还顺带发现需要把导出 opset 从 12 提到 17，per-channel
+DequantizeLinear 的 axis 属性是 opset 13+ 才有的）—— 但即使这样 Detect head 还是零检出，最后把整个
+Detect head 排除出量化范围（保留 fp32，只量化 backbone/neck）才彻底解决。验证：固定测试图上
+int8 模型 max class-conf 0.88，fp32 是 0.90，基本对齐。
+
+### 复现
+
+```bash
+# 量化（在 bench-wsl GPU 环境跑，需要 calib_images/ 下的真实 Pi5 相机校准图）
+cd edge-ai-lab && python3 quantize_int8.py
+
+# NCNN 导出（同样在 bench-wsl）
+python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='ncnn', imgsz=640)"
+
+# Pi 5 真机 benchmark
+cd perception/detection
+PYTHONPATH=/usr/lib/python3/dist-packages /home/pi/yolo-venv/bin/python \
+  benchmark_detect.py --models yolov8n.onnx yolov8n_int8.onnx --camera csi --frames 100 --confidence 0.15
+PYTHONPATH=/usr/lib/python3/dist-packages /home/pi/yolo-venv/bin/python \
+  benchmark_ncnn.py --model-dir yolov8n_ncnn_model --camera csi --frames 100
+```
+
+### 未做（下一轮可选，最有希望摸到 15 FPS 的杠杆）
+
+NCNN 自己的 INT8 量化路径（`ncnn2table` + `ncnn2int8`）—— 这两个工具不在 pip 装的 `ncnn` 包里，需要单独编译。
+如果 NCNN fp32（11.42）叠加 INT8 能拿到类似 ONNX 那样 ~1.4x 的量化收益，理论上能摸到 16 FPS 左右，正好过线。

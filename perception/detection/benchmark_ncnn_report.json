@@ -1,0 +1,15 @@
+{
+  "model": "yolov8n_ncnn (fp32)",
+  "model_size_mb": 12.12,
+  "frames": 100,
+  "camera": "csi",
+  "resolution": "640x480",
+  "fps_overall": 11.42,
+  "inference_latency_ms_avg": 75.77,
+  "inference_latency_ms_p95": 96.29,
+  "inference_latency_ms_min": 71.32,
+  "inference_latency_ms_max": 128.26,
+  "cpu_time_s": 28.58,
+  "cpu_percent_of_one_core": 326.3,
+  "peak_rss_mb": 242.9
+}

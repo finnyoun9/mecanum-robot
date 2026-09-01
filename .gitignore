@@ -8,6 +8,8 @@ obj/
 *.elf
 *.hex
 *.bin
+# NCNN model weights use .bin too, not a firmware build artifact
+!*.ncnn.bin
 
 # ROS2
 ros2_ws/build/
